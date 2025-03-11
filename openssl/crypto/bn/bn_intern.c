@@ -1,7 +1,7 @@
 /*
- * Copyright 2014-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2014-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -29,8 +29,10 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
 
     if (BN_is_zero(scalar)) {
         r = OPENSSL_malloc(1);
-        if (r == NULL)
+        if (r == NULL) {
+            BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_MALLOC_FAILURE);
             goto err;
+        }
         r[0] = 0;
         *ret_len = 1;
         return r;
@@ -38,7 +40,7 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
 
     if (w <= 0 || w > 7) {      /* 'signed char' can represent integers with
                                  * absolute values less than 2^7 */
-        ERR_raise(ERR_LIB_BN, ERR_R_INTERNAL_ERROR);
+        BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_INTERNAL_ERROR);
         goto err;
     }
     bit = 1 << w;               /* at most 128 */
@@ -50,7 +52,7 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
     }
 
     if (scalar->d == NULL || scalar->top == 0) {
-        ERR_raise(ERR_LIB_BN, ERR_R_INTERNAL_ERROR);
+        BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_INTERNAL_ERROR);
         goto err;
     }
 
@@ -60,8 +62,10 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
                                   * (*ret_len will be set to the actual length, i.e. at most
                                   * BN_num_bits(scalar) + 1)
                                   */
-    if (r == NULL)
+    if (r == NULL) {
+        BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
     window_val = scalar->d[0] & mask;
     j = 0;
     while ((window_val != 0) || (j + w + 1 < len)) { /* if j+w+1 >= len,
@@ -94,7 +98,7 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
             }
 
             if (digit <= -bit || digit >= bit || !(digit & 1)) {
-                ERR_raise(ERR_LIB_BN, ERR_R_INTERNAL_ERROR);
+                BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_INTERNAL_ERROR);
                 goto err;
             }
 
@@ -106,7 +110,7 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
              */
             if (window_val != 0 && window_val != next_bit
                 && window_val != bit) {
-                ERR_raise(ERR_LIB_BN, ERR_R_INTERNAL_ERROR);
+                BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_INTERNAL_ERROR);
                 goto err;
             }
         }
@@ -117,13 +121,13 @@ signed char *bn_compute_wNAF(const BIGNUM *scalar, int w, size_t *ret_len)
         window_val += bit * BN_is_bit_set(scalar, j + w);
 
         if (window_val > next_bit) {
-            ERR_raise(ERR_LIB_BN, ERR_R_INTERNAL_ERROR);
+            BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_INTERNAL_ERROR);
             goto err;
         }
     }
 
     if (j > len + 1) {
-        ERR_raise(ERR_LIB_BN, ERR_R_INTERNAL_ERROR);
+        BNerr(BN_F_BN_COMPUTE_WNAF, ERR_R_INTERNAL_ERROR);
         goto err;
     }
     *ret_len = j;
@@ -184,7 +188,7 @@ void bn_set_static_words(BIGNUM *a, const BN_ULONG *words, int size)
 int bn_set_words(BIGNUM *a, const BN_ULONG *words, int num_words)
 {
     if (bn_wexpand(a, num_words) == NULL) {
-        ERR_raise(ERR_LIB_BN, ERR_R_BN_LIB);
+        BNerr(BN_F_BN_SET_WORDS, ERR_R_MALLOC_FAILURE);
         return 0;
     }
 

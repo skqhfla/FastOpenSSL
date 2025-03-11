@@ -1,8 +1,8 @@
 /*
- * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2005 Nokia. All rights reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -13,9 +13,7 @@
 
 const char *SSL_state_string_long(const SSL *s)
 {
-    const SSL_CONNECTION *sc = SSL_CONNECTION_FROM_CONST_SSL(s);
-
-    if (sc == NULL || ossl_statem_in_error(sc))
+    if (ossl_statem_in_error(s))
         return "error";
 
     switch (SSL_get_state(s)) {
@@ -37,8 +35,6 @@ const char *SSL_state_string_long(const SSL *s)
         return "SSLv3/TLS read server hello";
     case TLS_ST_CR_CERT:
         return "SSLv3/TLS read server certificate";
-    case TLS_ST_CR_COMP_CERT:
-        return "TLSv1.3 read server compressed certificate";
     case TLS_ST_CR_KEY_EXCH:
         return "SSLv3/TLS read server key exchange";
     case TLS_ST_CR_CERT_REQ:
@@ -49,8 +45,6 @@ const char *SSL_state_string_long(const SSL *s)
         return "SSLv3/TLS read server done";
     case TLS_ST_CW_CERT:
         return "SSLv3/TLS write client certificate";
-    case TLS_ST_CW_COMP_CERT:
-        return "TLSv1.3 write client compressed certificate";
     case TLS_ST_CW_KEY_EXCH:
         return "SSLv3/TLS write client key exchange";
     case TLS_ST_CW_CERT_VRFY:
@@ -75,8 +69,6 @@ const char *SSL_state_string_long(const SSL *s)
         return "SSLv3/TLS write server hello";
     case TLS_ST_SW_CERT:
         return "SSLv3/TLS write certificate";
-    case TLS_ST_SW_COMP_CERT:
-        return "TLSv1.3 write server compressed certificate";
     case TLS_ST_SW_KEY_EXCH:
         return "SSLv3/TLS write key exchange";
     case TLS_ST_SW_CERT_REQ:
@@ -87,8 +79,6 @@ const char *SSL_state_string_long(const SSL *s)
         return "SSLv3/TLS write server done";
     case TLS_ST_SR_CERT:
         return "SSLv3/TLS read client certificate";
-    case TLS_ST_SR_COMP_CERT:
-        return "TLSv1.3 read client compressed certificate";
     case TLS_ST_SR_KEY_EXCH:
         return "SSLv3/TLS read client key exchange";
     case TLS_ST_SR_CERT_VRFY:
@@ -130,9 +120,7 @@ const char *SSL_state_string_long(const SSL *s)
 
 const char *SSL_state_string(const SSL *s)
 {
-    const SSL_CONNECTION *sc = SSL_CONNECTION_FROM_CONST_SSL(s);
-
-    if (sc == NULL || ossl_statem_in_error(sc))
+    if (ossl_statem_in_error(s))
         return "SSLERR";
 
     switch (SSL_get_state(s)) {
@@ -149,17 +137,15 @@ const char *SSL_state_string(const SSL *s)
     case TLS_ST_CW_NEXT_PROTO:
         return "TWNP";
     case TLS_ST_BEFORE:
-        return "PINIT";
+        return "PINIT ";
     case TLS_ST_OK:
-        return "SSLOK";
+        return "SSLOK ";
     case TLS_ST_CW_CLNT_HELLO:
         return "TWCH";
     case TLS_ST_CR_SRVR_HELLO:
         return "TRSH";
     case TLS_ST_CR_CERT:
         return "TRSC";
-    case TLS_ST_CR_COMP_CERT:
-        return "TRSCC";
     case TLS_ST_CR_KEY_EXCH:
         return "TRSKE";
     case TLS_ST_CR_CERT_REQ:
@@ -168,8 +154,6 @@ const char *SSL_state_string(const SSL *s)
         return "TRSD";
     case TLS_ST_CW_CERT:
         return "TWCC";
-    case TLS_ST_CW_COMP_CERT:
-        return "TWCCC";
     case TLS_ST_CW_KEY_EXCH:
         return "TWCKE";
     case TLS_ST_CW_CERT_VRFY:
@@ -194,8 +178,6 @@ const char *SSL_state_string(const SSL *s)
         return "TWSH";
     case TLS_ST_SW_CERT:
         return "TWSC";
-    case TLS_ST_SW_COMP_CERT:
-        return "TWSCC";
     case TLS_ST_SW_KEY_EXCH:
         return "TWSKE";
     case TLS_ST_SW_CERT_REQ:
@@ -204,8 +186,6 @@ const char *SSL_state_string(const SSL *s)
         return "TWSD";
     case TLS_ST_SR_CERT:
         return "TRCC";
-    case TLS_ST_SR_COMP_CERT:
-        return "TRCCC";
     case TLS_ST_SR_KEY_EXCH:
         return "TRCKE";
     case TLS_ST_SR_CERT_VRFY:
@@ -221,7 +201,7 @@ const char *SSL_state_string(const SSL *s)
     case TLS_ST_CR_CERT_VRFY:
         return "TRSCV";
     case TLS_ST_SW_CERT_VRFY:
-        return "TWSCV";
+        return "TRSCV";
     case TLS_ST_CR_HELLO_REQ:
         return "TRHR";
     case TLS_ST_SW_KEY_UPDATE:
@@ -241,7 +221,7 @@ const char *SSL_state_string(const SSL *s)
     case TLS_ST_SR_END_OF_EARLY_DATA:
         return "TWEOED";
     default:
-        return "UNKWN";
+        return "UNKWN ";
     }
 }
 
@@ -343,7 +323,7 @@ const char *SSL_alert_desc_string_long(int value)
     case SSL3_AD_CLOSE_NOTIFY:
         return "close notify";
     case SSL3_AD_UNEXPECTED_MESSAGE:
-        return "unexpected message";
+        return "unexpected_message";
     case SSL3_AD_BAD_RECORD_MAC:
         return "bad record mac";
     case SSL3_AD_DECOMPRESSION_FAILURE:

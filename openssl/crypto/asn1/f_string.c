@@ -1,7 +1,7 @@
 /*
- * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -16,6 +16,7 @@
 int i2a_ASN1_STRING(BIO *bp, const ASN1_STRING *a, int type)
 {
     int i, n = 0;
+    static const char *h = "0123456789ABCDEF";
     char buf[2];
 
     if (a == NULL)
@@ -32,7 +33,8 @@ int i2a_ASN1_STRING(BIO *bp, const ASN1_STRING *a, int type)
                     goto err;
                 n += 2;
             }
-            ossl_to_hex(buf, a->data[i]);
+            buf[0] = h[((unsigned char)a->data[i] >> 4) & 0x0f];
+            buf[1] = h[((unsigned char)a->data[i]) & 0x0f];
             if (BIO_write(bp, buf, 2) != 2)
                 goto err;
             n += 2;
@@ -89,7 +91,7 @@ int a2i_ASN1_STRING(BIO *bp, ASN1_STRING *bs, char *buf, int size)
         k = 0;
         i -= again;
         if (i % 2 != 0) {
-            ERR_raise(ERR_LIB_ASN1, ASN1_R_ODD_NUMBER_OF_CHARS);
+            ASN1err(ASN1_F_A2I_ASN1_STRING, ASN1_R_ODD_NUMBER_OF_CHARS);
             OPENSSL_free(s);
             return 0;
         }
@@ -97,6 +99,7 @@ int a2i_ASN1_STRING(BIO *bp, ASN1_STRING *bs, char *buf, int size)
         if (num + i > slen) {
             sp = OPENSSL_realloc(s, (unsigned int)num + i * 2);
             if (sp == NULL) {
+                ASN1err(ASN1_F_A2I_ASN1_STRING, ERR_R_MALLOC_FAILURE);
                 OPENSSL_free(s);
                 return 0;
             }
@@ -107,7 +110,8 @@ int a2i_ASN1_STRING(BIO *bp, ASN1_STRING *bs, char *buf, int size)
             for (n = 0; n < 2; n++) {
                 m = OPENSSL_hexchar2int(bufp[k + n]);
                 if (m < 0) {
-                    ERR_raise(ERR_LIB_ASN1, ASN1_R_NON_HEX_CHARACTERS);
+                    ASN1err(ASN1_F_A2I_ASN1_STRING,
+                            ASN1_R_NON_HEX_CHARACTERS);
                     OPENSSL_free(s);
                     return 0;
                 }
@@ -126,7 +130,7 @@ int a2i_ASN1_STRING(BIO *bp, ASN1_STRING *bs, char *buf, int size)
     return 1;
 
  err:
-    ERR_raise(ERR_LIB_ASN1, ASN1_R_SHORT_LINE);
+    ASN1err(ASN1_F_A2I_ASN1_STRING, ASN1_R_SHORT_LINE);
     OPENSSL_free(s);
     return 0;
 }

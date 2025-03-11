@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the Apache License 2.0 (the "License").  You may not use
+# Licensed under the OpenSSL license (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -27,20 +27,17 @@
 #
 #		r=1088(*)
 #
-# PPC970/G5	14.0/+130%
-# POWER7	9.7/+110%
-# POWER8	10.6/+100%
-# POWER9	8.2/+66%
+# PPC970/G5	14.6/+120%
+# POWER7	10.3/+100%
+# POWER8	11.5/+85%
+# POWER9	9.4/+45%
 #
 # (*)	Corresponds to SHA3-256. Percentage after slash is improvement
 #	over gcc-4.x-generated KECCAK_1X_ALT code. Newer compilers do
 #	much better (but watch out for them generating code specific
 #	to processor they execute on).
 
-# $output is the last argument if it looks like a file (it has an extension)
-# $flavour is the first argument if it doesn't look like a file
-$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
-$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
+$flavour = shift;
 
 if ($flavour =~ /64/) {
 	$SIZE_T	=8;
@@ -51,23 +48,12 @@ if ($flavour =~ /64/) {
 	$PUSH	="std";
 } else { die "nonsense $flavour"; }
 
-$LITTLE_ENDIAN = ($flavour=~/le$/) ? 1 : 0;
-
-if ($LITTLE_ENDIAN) {
-	$DWORD_LE_LOAD = "ldu	r0,8(r3)";
-	$LE_LOAD_SIZE = "8";
-} else {
-	$DWORD_LE_LOAD = "bl	dword_le_load";
-	$LE_LOAD_SIZE = "1";
-}
-
 $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 ( $xlate="${dir}ppc-xlate.pl" and -f $xlate ) or
 ( $xlate="${dir}../../perlasm/ppc-xlate.pl" and -f $xlate) or
 die "can't locate ppc-xlate.pl";
 
-open STDOUT,"| $^X $xlate $flavour \"$output\""
-    or die "can't call $xlate: $!";
+open STDOUT,"| $^X $xlate $flavour ".shift || die "can't call $xlate: $!";
 
 $FRAME=24*$SIZE_T+6*$SIZE_T+32;
 $LOCALS=6*$SIZE_T;
@@ -394,25 +380,23 @@ KeccakF1600:
 	.byte	0,12,4,1,0x80,18,1,0
 	.long	0
 .size	KeccakF1600,.-KeccakF1600
-___
-if (!$LITTLE_ENDIAN) {
-$code.=<<___;
+
 .type	dword_le_load,\@function
 .align	5
 dword_le_load:
-	lbz	r0,1(r3)
-	lbz	r4,2(r3)
-	lbz	r5,3(r3)
+	lbzu	r0,1(r3)
+	lbzu	r4,1(r3)
+	lbzu	r5,1(r3)
 	insrdi	r0,r4,8,48
-	lbz	r4,4(r3)
+	lbzu	r4,1(r3)
 	insrdi	r0,r5,8,40
-	lbz	r5,5(r3)
+	lbzu	r5,1(r3)
 	insrdi	r0,r4,8,32
-	lbz	r4,6(r3)
+	lbzu	r4,1(r3)
 	insrdi	r0,r5,8,24
-	lbz	r5,7(r3)
+	lbzu	r5,1(r3)
 	insrdi	r0,r4,8,16
-	lbzu	r4,8(r3)
+	lbzu	r4,1(r3)
 	insrdi	r0,r5,8,8
 	insrdi	r0,r4,8,0
 	blr
@@ -420,10 +404,7 @@ dword_le_load:
 	.byte	0,12,0x14,0,0,0,1,0
 	.long	0
 .size	dword_le_load,.-dword_le_load
-___
-}
 
-$code.=<<___;
 .globl	SHA3_absorb
 .type	SHA3_absorb,\@function
 .align	5
@@ -451,7 +432,7 @@ SHA3_absorb:
 	$PUSH	r0,`$FRAME+$LRSAVE`($sp)
 
 	bl	PICmeup
-	subi	r4,r4,$LE_LOAD_SIZE		; prepare for ldu or lbzu
+	subi	r4,r4,1				; prepare for lbzu
 	subi	r12,r12,8			; prepare for ldu
 
 	$PUSH	r3,`$LOCALS+0*$SIZE_T`($sp)	; save A[][]
@@ -502,79 +483,79 @@ SHA3_absorb:
 	srwi	r5,r5,3
 	$PUSH	r4,`$LOCALS+2*$SIZE_T`($sp)	; save len
 	mtctr	r5
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[0][0],$A[0][0],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[0][1],$A[0][1],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[0][2],$A[0][2],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[0][3],$A[0][3],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[0][4],$A[0][4],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[1][0],$A[1][0],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[1][1],$A[1][1],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[1][2],$A[1][2],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[1][3],$A[1][3],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[1][4],$A[1][4],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[2][0],$A[2][0],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[2][1],$A[2][1],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[2][2],$A[2][2],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[2][3],$A[2][3],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[2][4],$A[2][4],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[3][0],$A[3][0],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[3][1],$A[3][1],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[3][2],$A[3][2],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[3][3],$A[3][3],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[3][4],$A[3][4],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[4][0],$A[4][0],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[4][1],$A[4][1],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[4][2],$A[4][2],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[4][3],$A[4][3],r0
 	bdz	.Lprocess_block
-	$DWORD_LE_LOAD				; *inp++
+	bl	dword_le_load			; *inp++
 	xor	$A[4][4],$A[4][4],r0
 
 .Lprocess_block:
@@ -668,8 +649,6 @@ SHA3_squeeze:
 	subi	$out,r4,1		; prepare for stbu
 	mr	$len,r5
 	mr	$bsz,r6
-	cmplwi	r7,0                    ; r7 = 'next' argument
-	bne	.Lnext_block
 	b	.Loop_squeeze
 
 .align	4
@@ -678,21 +657,21 @@ SHA3_squeeze:
 	${UCMP}i $len,8
 	blt	.Lsqueeze_tail
 
-	stb	r0,1($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stb	r0,2($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stb	r0,3($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stb	r0,4($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stb	r0,5($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stb	r0,6($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stb	r0,7($out)
+	stbu	r0,1($out)
 	srdi	r0,r0,8
-	stbu	r0,8($out)
+	stbu	r0,1($out)
 
 	subic.	$len,$len,8
 	beq	.Lsqueeze_done
@@ -700,7 +679,6 @@ SHA3_squeeze:
 	subic.	r6,r6,8
 	bgt	.Loop_squeeze
 
-.Lnext_block:
 	mr	r3,$A_flat
 	bl	KeccakF1600
 	subi	r3,$A_flat,8		; prepare for ldu

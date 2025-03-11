@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
 # Copyright 2015-2020 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the Apache License 2.0 (the "License").  You may not use
+# Licensed under the OpenSSL license (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -31,18 +31,15 @@
 # on benchmark. Lower coefficients are for ECDSA sign, server-side
 # operation. Keep in mind that +400% means 5x improvement.
 
-# $output is the last argument if it looks like a file (it has an extension)
-# $flavour is the first argument if it doesn't look like a file
-$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
-$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
+$flavour = shift;
+while (($output=shift) && ($output!~/\w[\w\-]*\.\w+$/)) {}
 
 $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 ( $xlate="${dir}arm-xlate.pl" and -f $xlate ) or
 ( $xlate="${dir}../../perlasm/arm-xlate.pl" and -f $xlate) or
 die "can't locate arm-xlate.pl";
 
-open OUT,"| \"$^X\" $xlate $flavour \"$output\""
-    or die "can't call $xlate: $!";
+open OUT,"| \"$^X\" $xlate $flavour $output";
 *STDOUT=*OUT;
 
 {
@@ -122,7 +119,7 @@ $code.=<<___;
 .type	ecp_nistz256_to_mont,%function
 .align	6
 ecp_nistz256_to_mont:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -138,7 +135,7 @@ ecp_nistz256_to_mont:
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_to_mont,.-ecp_nistz256_to_mont
 
@@ -147,7 +144,7 @@ ecp_nistz256_to_mont:
 .type	ecp_nistz256_from_mont,%function
 .align	4
 ecp_nistz256_from_mont:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -163,7 +160,7 @@ ecp_nistz256_from_mont:
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_from_mont,.-ecp_nistz256_from_mont
 
@@ -173,7 +170,7 @@ ecp_nistz256_from_mont:
 .type	ecp_nistz256_mul_mont,%function
 .align	4
 ecp_nistz256_mul_mont:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -188,7 +185,7 @@ ecp_nistz256_mul_mont:
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_mul_mont,.-ecp_nistz256_mul_mont
 
@@ -197,7 +194,7 @@ ecp_nistz256_mul_mont:
 .type	ecp_nistz256_sqr_mont,%function
 .align	4
 ecp_nistz256_sqr_mont:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-32]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -211,7 +208,7 @@ ecp_nistz256_sqr_mont:
 
 	ldp	x19,x20,[sp,#16]
 	ldp	x29,x30,[sp],#32
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_sqr_mont,.-ecp_nistz256_sqr_mont
 
@@ -221,7 +218,7 @@ ecp_nistz256_sqr_mont:
 .type	ecp_nistz256_add,%function
 .align	4
 ecp_nistz256_add:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -235,7 +232,7 @@ ecp_nistz256_add:
 	bl	__ecp_nistz256_add
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_add,.-ecp_nistz256_add
 
@@ -244,7 +241,7 @@ ecp_nistz256_add:
 .type	ecp_nistz256_div_by_2,%function
 .align	4
 ecp_nistz256_div_by_2:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -256,7 +253,7 @@ ecp_nistz256_div_by_2:
 	bl	__ecp_nistz256_div_by_2
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		//  autiasp
 	ret
 .size	ecp_nistz256_div_by_2,.-ecp_nistz256_div_by_2
 
@@ -265,7 +262,7 @@ ecp_nistz256_div_by_2:
 .type	ecp_nistz256_mul_by_2,%function
 .align	4
 ecp_nistz256_mul_by_2:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -281,7 +278,7 @@ ecp_nistz256_mul_by_2:
 	bl	__ecp_nistz256_add	// ret = a+a	// 2*a
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_mul_by_2,.-ecp_nistz256_mul_by_2
 
@@ -290,7 +287,7 @@ ecp_nistz256_mul_by_2:
 .type	ecp_nistz256_mul_by_3,%function
 .align	4
 ecp_nistz256_mul_by_3:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -317,7 +314,7 @@ ecp_nistz256_mul_by_3:
 	bl	__ecp_nistz256_add	// ret += a	// 2*a+a=3*a
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_mul_by_3,.-ecp_nistz256_mul_by_3
 
@@ -327,7 +324,7 @@ ecp_nistz256_mul_by_3:
 .type	ecp_nistz256_sub,%function
 .align	4
 ecp_nistz256_sub:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -339,7 +336,7 @@ ecp_nistz256_sub:
 	bl	__ecp_nistz256_sub_from
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_sub,.-ecp_nistz256_sub
 
@@ -348,7 +345,7 @@ ecp_nistz256_sub:
 .type	ecp_nistz256_neg,%function
 .align	4
 ecp_nistz256_neg:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -363,7 +360,7 @@ ecp_nistz256_neg:
 	bl	__ecp_nistz256_sub_from
 
 	ldp	x29,x30,[sp],#16
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_neg,.-ecp_nistz256_neg
 
@@ -724,7 +721,7 @@ $code.=<<___;
 .type	ecp_nistz256_point_double,%function
 .align	5
 ecp_nistz256_point_double:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -859,7 +856,7 @@ ecp_nistz256_point_double:
 	ldp	x19,x20,[x29,#16]
 	ldp	x21,x22,[x29,#32]
 	ldp	x29,x30,[sp],#96
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_point_double,.-ecp_nistz256_point_double
 ___
@@ -882,7 +879,7 @@ $code.=<<___;
 .type	ecp_nistz256_point_add,%function
 .align	5
 ecp_nistz256_point_add:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-96]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -1117,7 +1114,7 @@ $code.=<<___;
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#96
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_point_add,.-ecp_nistz256_point_add
 ___
@@ -1139,7 +1136,7 @@ $code.=<<___;
 .type	ecp_nistz256_point_add_affine,%function
 .align	5
 ecp_nistz256_point_add_affine:
-	AARCH64_SIGN_LINK_REGISTER
+	.inst	0xd503233f		// paciasp
 	stp	x29,x30,[sp,#-80]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -1328,7 +1325,7 @@ $code.=<<___;
 	ldp	x23,x24,[x29,#48]
 	ldp	x25,x26,[x29,#64]
 	ldp	x29,x30,[sp],#80
-	AARCH64_VALIDATE_LINK_REGISTER
+	.inst	0xd50323bf		// autiasp
 	ret
 .size	ecp_nistz256_point_add_affine,.-ecp_nistz256_point_add_affine
 ___
@@ -1346,8 +1343,6 @@ $code.=<<___;
 .type	ecp_nistz256_ord_mul_mont,%function
 .align	4
 ecp_nistz256_ord_mul_mont:
-	AARCH64_VALID_CALL_TARGET
-	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-64]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -1484,13 +1479,11 @@ $code.=<<___;
 
 ////////////////////////////////////////////////////////////////////////
 // void ecp_nistz256_ord_sqr_mont(uint64_t res[4], uint64_t a[4],
-//                                uint64_t rep);
+//                                int rep);
 .globl	ecp_nistz256_ord_sqr_mont
 .type	ecp_nistz256_ord_sqr_mont,%function
 .align	4
 ecp_nistz256_ord_sqr_mont:
-	AARCH64_VALID_CALL_TARGET
-	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-64]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -1645,8 +1638,6 @@ $code.=<<___;
 .type	ecp_nistz256_scatter_w5,%function
 .align	4
 ecp_nistz256_scatter_w5:
-	AARCH64_VALID_CALL_TARGET
-	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1654,7 +1645,7 @@ ecp_nistz256_scatter_w5:
 
 	ldp	x4,x5,[$inp]		// X
 	ldp	x6,x7,[$inp,#16]
-	stur	w4,[$out,#64*0-4]
+	str	w4,[$out,#64*0-4]
 	lsr	x4,x4,#32
 	str	w5,[$out,#64*1-4]
 	lsr	x5,x5,#32
@@ -1670,7 +1661,7 @@ ecp_nistz256_scatter_w5:
 
 	ldp	x4,x5,[$inp,#32]	// Y
 	ldp	x6,x7,[$inp,#48]
-	stur	w4,[$out,#64*0-4]
+	str	w4,[$out,#64*0-4]
 	lsr	x4,x4,#32
 	str	w5,[$out,#64*1-4]
 	lsr	x5,x5,#32
@@ -1686,7 +1677,7 @@ ecp_nistz256_scatter_w5:
 
 	ldp	x4,x5,[$inp,#64]	// Z
 	ldp	x6,x7,[$inp,#80]
-	stur	w4,[$out,#64*0-4]
+	str	w4,[$out,#64*0-4]
 	lsr	x4,x4,#32
 	str	w5,[$out,#64*1-4]
 	lsr	x5,x5,#32
@@ -1709,8 +1700,6 @@ ecp_nistz256_scatter_w5:
 .type	ecp_nistz256_gather_w5,%function
 .align	4
 ecp_nistz256_gather_w5:
-	AARCH64_VALID_CALL_TARGET
-	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1788,8 +1777,6 @@ ecp_nistz256_gather_w5:
 .type	ecp_nistz256_scatter_w7,%function
 .align	4
 ecp_nistz256_scatter_w7:
-	AARCH64_VALID_CALL_TARGET
-	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 
@@ -1834,8 +1821,6 @@ ecp_nistz256_scatter_w7:
 .type	ecp_nistz256_gather_w7,%function
 .align	4
 ecp_nistz256_gather_w7:
-	AARCH64_VALID_CALL_TARGET
-	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0
 

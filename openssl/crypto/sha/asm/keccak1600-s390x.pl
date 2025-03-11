@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the Apache License 2.0 (the "License").  You may not use
+# Licensed under the OpenSSL license (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -30,10 +30,7 @@
 # amount of instruction and assumed instruction issue rate. It's ~2.5x
 # faster than compiler-generated code.
 
-# $output is the last argument if it looks like a file (it has an extension)
-# $flavour is the first argument if it doesn't look like a file
-$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
-$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
+$flavour = shift;
 
 if ($flavour =~ /3[12]/) {
 	$SIZE_T=4;
@@ -43,7 +40,8 @@ if ($flavour =~ /3[12]/) {
 	$g="g";
 }
 
-$output and open STDOUT,">$output";
+while (($output=shift) && ($output!~/\w[\w\-]*\.\w+$/)) {}
+open STDOUT,">$output";
 
 my @A = map([ 8*$_, 8*($_+1), 8*($_+2), 8*($_+3), 8*($_+4) ], (0,5,10,15,20));
 
@@ -472,7 +470,7 @@ SHA3_absorb:
 .size	SHA3_absorb,.-SHA3_absorb
 ___
 }
-{ my ($A_flat,$out,$len,$bsz,$next) = map("%r$_",(2..6));
+{ my ($A_flat,$out,$len,$bsz) = map("%r$_",(2..5));
 
 $code.=<<___;
 .globl	SHA3_squeeze
@@ -484,7 +482,6 @@ SHA3_squeeze:
 	lghi	%r14,8
 	st${g}	$bsz,5*$SIZE_T($sp)
 	la	%r1,0($A_flat)
-	cijne	$next,0,.Lnext_block
 
 	j	.Loop_squeeze
 
@@ -502,7 +499,6 @@ SHA3_squeeze:
 
 	brct	$bsz,.Loop_squeeze	# bsz--
 
-.Lnext_block:
 	stm${g}	$out,$len,3*$SIZE_T($sp)
 	bras	%r14,.LKeccakF1600
 	lm${g}	$out,$bsz,3*$SIZE_T($sp)

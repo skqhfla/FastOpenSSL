@@ -1,7 +1,7 @@
 /*
- * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -23,22 +23,16 @@ int X509_set_version(X509 *x, long version)
 {
     if (x == NULL)
         return 0;
-    if (version == X509_get_version(x))
-        return 1; /* avoid needless modification even re-allocation */
-    if (version == X509_VERSION_1) {
+    if (version == 0) {
         ASN1_INTEGER_free(x->cert_info.version);
         x->cert_info.version = NULL;
-        x->cert_info.enc.modified = 1;
         return 1;
     }
     if (x->cert_info.version == NULL) {
         if ((x->cert_info.version = ASN1_INTEGER_new()) == NULL)
             return 0;
     }
-    if (!ASN1_INTEGER_set(x->cert_info.version, version))
-        return 0;
-    x->cert_info.enc.modified = 1;
-    return 1;
+    return ASN1_INTEGER_set(x->cert_info.version, version);
 }
 
 int X509_set_serialNumber(X509 *x, ASN1_INTEGER *serial)
@@ -50,78 +44,68 @@ int X509_set_serialNumber(X509 *x, ASN1_INTEGER *serial)
     in = &x->cert_info.serialNumber;
     if (in != serial)
         return ASN1_STRING_copy(in, serial);
-    x->cert_info.enc.modified = 1;
     return 1;
 }
 
-int X509_set_issuer_name(X509 *x, const X509_NAME *name)
+int X509_set_issuer_name(X509 *x, X509_NAME *name)
 {
-    if (x == NULL || !X509_NAME_set(&x->cert_info.issuer, name))
+    if (x == NULL)
         return 0;
-    x->cert_info.enc.modified = 1;
-    return 1;
+    return X509_NAME_set(&x->cert_info.issuer, name);
 }
 
-int X509_set_subject_name(X509 *x, const X509_NAME *name)
+int X509_set_subject_name(X509 *x, X509_NAME *name)
 {
-    if (x == NULL || !X509_NAME_set(&x->cert_info.subject, name))
+    if (x == NULL)
         return 0;
-    x->cert_info.enc.modified = 1;
-    return 1;
+    return X509_NAME_set(&x->cert_info.subject, name);
 }
 
-int ossl_x509_set1_time(int *modified, ASN1_TIME **ptm, const ASN1_TIME *tm)
+int x509_set1_time(ASN1_TIME **ptm, const ASN1_TIME *tm)
 {
-    ASN1_TIME *new;
-
-    if (*ptm == tm)
-        return 1;
-    new = ASN1_STRING_dup(tm);
-    if (tm != NULL && new == NULL)
-        return 0;
-    ASN1_TIME_free(*ptm);
-    *ptm = new;
-    if (modified != NULL)
-        *modified = 1;
-    return 1;
+    ASN1_TIME *in;
+    in = *ptm;
+    if (in != tm) {
+        in = ASN1_STRING_dup(tm);
+        if (in != NULL) {
+            ASN1_TIME_free(*ptm);
+            *ptm = in;
+        }
+    }
+    return (in != NULL);
 }
 
 int X509_set1_notBefore(X509 *x, const ASN1_TIME *tm)
 {
-    if (x == NULL || tm == NULL)
+    if (x == NULL)
         return 0;
-    return ossl_x509_set1_time(&x->cert_info.enc.modified,
-                               &x->cert_info.validity.notBefore, tm);
+    return x509_set1_time(&x->cert_info.validity.notBefore, tm);
 }
 
 int X509_set1_notAfter(X509 *x, const ASN1_TIME *tm)
 {
-    if (x == NULL || tm == NULL)
+    if (x == NULL)
         return 0;
-    return ossl_x509_set1_time(&x->cert_info.enc.modified,
-                               &x->cert_info.validity.notAfter, tm);
+    return x509_set1_time(&x->cert_info.validity.notAfter, tm);
 }
 
 int X509_set_pubkey(X509 *x, EVP_PKEY *pkey)
 {
     if (x == NULL)
         return 0;
-    if (!X509_PUBKEY_set(&(x->cert_info.key), pkey))
-        return 0;
-    x->cert_info.enc.modified = 1;
-    return 1;
+    return X509_PUBKEY_set(&(x->cert_info.key), pkey);
 }
 
 int X509_up_ref(X509 *x)
 {
     int i;
 
-    if (CRYPTO_UP_REF(&x->references, &i) <= 0)
+    if (CRYPTO_UP_REF(&x->references, &i, x->lock) <= 0)
         return 0;
 
-    REF_PRINT_COUNT("X509", i, x);
+    REF_PRINT_COUNT("X509", x);
     REF_ASSERT_ISNT(i < 2);
-    return i > 1;
+    return ((i > 1) ? 1 : 0);
 }
 
 long X509_get_version(const X509 *x)
@@ -208,97 +192,46 @@ int X509_get_signature_info(X509 *x, int *mdnid, int *pknid, int *secbits,
     return X509_SIG_INFO_get(&x->siginf, mdnid, pknid, secbits, flags);
 }
 
-/* Modify *siginf according to alg and sig. Return 1 on success, else 0. */
-static int x509_sig_info_init(X509_SIG_INFO *siginf, const X509_ALGOR *alg,
-                              const ASN1_STRING *sig, const EVP_PKEY *pubkey)
+static void x509_sig_info_init(X509_SIG_INFO *siginf, const X509_ALGOR *alg,
+                               const ASN1_STRING *sig)
 {
-    int pknid, mdnid, md_size;
+    int pknid, mdnid;
     const EVP_MD *md;
-    const EVP_PKEY_ASN1_METHOD *ameth;
 
     siginf->mdnid = NID_undef;
     siginf->pknid = NID_undef;
     siginf->secbits = -1;
     siginf->flags = 0;
     if (!OBJ_find_sigid_algs(OBJ_obj2nid(alg->algorithm), &mdnid, &pknid)
-            || pknid == NID_undef) {
-        ERR_raise(ERR_LIB_X509, X509_R_UNKNOWN_SIGID_ALGS);
-        return 0;
-    }
-    siginf->mdnid = mdnid;
+            || pknid == NID_undef)
+        return;
     siginf->pknid = pknid;
-
-    switch (mdnid) {
-    case NID_undef:
+    if (mdnid == NID_undef) {
         /* If we have one, use a custom handler for this algorithm */
-        ameth = EVP_PKEY_asn1_find(NULL, pknid);
-        if (ameth != NULL && ameth->siginf_set != NULL
-                && ameth->siginf_set(siginf, alg, sig))
-           break;
-        if (pubkey != NULL) {
-            int secbits;
-
-            secbits = EVP_PKEY_get_security_bits(pubkey);
-            if (secbits != 0) {
-                siginf->secbits = secbits;
-                break;
-            }
-        }
-        ERR_raise(ERR_LIB_X509, X509_R_ERROR_USING_SIGINF_SET);
-        return 0;
-        /*
-         * SHA1 and MD5 are known to be broken. Reduce security bits so that
-         * they're no longer accepted at security level 1.
-         * The real values don't really matter as long as they're lower than 80,
-         * which is our security level 1.
-         */
-    case NID_sha1:
-        /*
-         * https://eprint.iacr.org/2020/014 puts a chosen-prefix attack
-         * for SHA1 at2^63.4
-         */
-        siginf->secbits = 63;
-        break;
-    case NID_md5:
-        /*
-         * https://documents.epfl.ch/users/l/le/lenstra/public/papers/lat.pdf
-         * puts a chosen-prefix attack for MD5 at 2^39.
-         */
-        siginf->secbits = 39;
-        break;
-    case NID_id_GostR3411_94:
-        /*
-         * There is a collision attack on GOST R 34.11-94 at 2^105, see
-         * https://link.springer.com/chapter/10.1007%2F978-3-540-85174-5_10
-         */
-        siginf->secbits = 105;
-        break;
-    default:
-        /* Security bits: half number of bits in digest */
-        if ((md = EVP_get_digestbynid(mdnid)) == NULL) {
-            ERR_raise(ERR_LIB_X509, X509_R_ERROR_GETTING_MD_BY_NID);
-            return 0;
-        }
-        md_size = EVP_MD_get_size(md);
-        if (md_size <= 0)
-            return 0;
-        siginf->secbits = md_size * 4;
-        break;
-    }
-    switch (mdnid) {
-    case NID_sha1:
-    case NID_sha256:
-    case NID_sha384:
-    case NID_sha512:
-        siginf->flags |= X509_SIG_INFO_TLS;
+        const EVP_PKEY_ASN1_METHOD *ameth = EVP_PKEY_asn1_find(NULL, pknid);
+        if (ameth == NULL || ameth->siginf_set == NULL
+                || ameth->siginf_set(siginf, alg, sig) == 0)
+            return;
+        siginf->flags |= X509_SIG_INFO_VALID;
+        return;
     }
     siginf->flags |= X509_SIG_INFO_VALID;
-    return 1;
+    siginf->mdnid = mdnid;
+    md = EVP_get_digestbynid(mdnid);
+    if (md == NULL)
+        return;
+    /* Security bits: half number of bits in digest */
+    siginf->secbits = EVP_MD_size(md) * 4;
+    switch (mdnid) {
+        case NID_sha1:
+        case NID_sha256:
+        case NID_sha384:
+        case NID_sha512:
+        siginf->flags |= X509_SIG_INFO_TLS;
+    }
 }
 
-/* Returns 1 on success, 0 on failure */
-int ossl_x509_init_sig_info(X509 *x)
+void x509_init_sig_info(X509 *x)
 {
-    return x509_sig_info_init(&x->siginf, &x->sig_alg, &x->signature,
-                              X509_PUBKEY_get0(x->cert_info.key));
+    x509_sig_info_init(&x->siginf, &x->sig_alg, &x->signature);
 }

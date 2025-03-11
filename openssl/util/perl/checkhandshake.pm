@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
-# Copyright 2015-2018 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2015-2019 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the Apache License 2.0 (the "License").  You may not use
+# Licensed under the OpenSSL license (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -26,11 +26,8 @@ use constant {
     EC_HANDSHAKE => 64,
     HRR_HANDSHAKE => 128,
     HRR_RESUME_HANDSHAKE => 256,
-    CERT_COMP_SRV_HANDSHAKE => 512,
-    CERT_COMP_CLI_HANDSHAKE => 1024,
-    CERT_COMP_BOTH_HANDSHAKE => 2048,
 
-    ALL_HANDSHAKES => 4095
+    ALL_HANDSHAKES => 511
 };
 
 use constant {
@@ -57,9 +54,7 @@ use constant {
     PSK_KEX_MODES_EXTENSION => 0x00040000,
     KEY_SHARE_HRR_EXTENSION => 0x00080000,
     SUPPORTED_GROUPS_SRV_EXTENSION => 0x00100000,
-    POST_HANDSHAKE_AUTH_CLI_EXTENSION => 0x00200000,
-    CERT_COMP_CLI_EXTENSION => 0x00400000,
-    CERT_COMP_SRV_EXTENSION => 0x00800000
+    POST_HANDSHAKE_AUTH_CLI_EXTENSION => 0x00200000
 };
 
 our @handmessages = ();

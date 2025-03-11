@@ -1,7 +1,7 @@
 /*
- * Copyright 2009-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2009-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -27,12 +27,134 @@
 # include <sys/sysctl.h>
 #endif
 #include <openssl/crypto.h>
-#include "internal/cryptlib.h"
-#include "crypto/ppc_arch.h"
+#include <openssl/bn.h>
+#include <internal/cryptlib.h>
+#include <crypto/chacha.h>
+#include "bn/bn_local.h"
+
+#include "ppc_arch.h"
 
 unsigned int OPENSSL_ppccap_P = 0;
 
 static sigset_t all_masked;
+
+#ifdef OPENSSL_BN_ASM_MONT
+int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
+                const BN_ULONG *np, const BN_ULONG *n0, int num)
+{
+    int bn_mul_mont_int(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
+                        const BN_ULONG *np, const BN_ULONG *n0, int num);
+    int bn_mul4x_mont_int(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
+                          const BN_ULONG *np, const BN_ULONG *n0, int num);
+
+    if (num < 4)
+        return 0;
+
+    if ((num & 3) == 0)
+        return bn_mul4x_mont_int(rp, ap, bp, np, n0, num);
+
+    /*
+     * There used to be [optional] call to bn_mul_mont_fpu64 here,
+     * but above subroutine is faster on contemporary processors.
+     * Formulation means that there might be old processors where
+     * FPU code path would be faster, POWER6 perhaps, but there was
+     * no opportunity to figure it out...
+     */
+
+    return bn_mul_mont_int(rp, ap, bp, np, n0, num);
+}
+#endif
+
+void sha256_block_p8(void *ctx, const void *inp, size_t len);
+void sha256_block_ppc(void *ctx, const void *inp, size_t len);
+void sha256_block_data_order(void *ctx, const void *inp, size_t len);
+void sha256_block_data_order(void *ctx, const void *inp, size_t len)
+{
+    OPENSSL_ppccap_P & PPC_CRYPTO207 ? sha256_block_p8(ctx, inp, len) :
+        sha256_block_ppc(ctx, inp, len);
+}
+
+void sha512_block_p8(void *ctx, const void *inp, size_t len);
+void sha512_block_ppc(void *ctx, const void *inp, size_t len);
+void sha512_block_data_order(void *ctx, const void *inp, size_t len);
+void sha512_block_data_order(void *ctx, const void *inp, size_t len)
+{
+    OPENSSL_ppccap_P & PPC_CRYPTO207 ? sha512_block_p8(ctx, inp, len) :
+        sha512_block_ppc(ctx, inp, len);
+}
+
+#ifndef OPENSSL_NO_CHACHA
+void ChaCha20_ctr32_int(unsigned char *out, const unsigned char *inp,
+                        size_t len, const unsigned int key[8],
+                        const unsigned int counter[4]);
+void ChaCha20_ctr32_vmx(unsigned char *out, const unsigned char *inp,
+                        size_t len, const unsigned int key[8],
+                        const unsigned int counter[4]);
+void ChaCha20_ctr32_vsx(unsigned char *out, const unsigned char *inp,
+                        size_t len, const unsigned int key[8],
+                        const unsigned int counter[4]);
+void ChaCha20_ctr32(unsigned char *out, const unsigned char *inp,
+                    size_t len, const unsigned int key[8],
+                    const unsigned int counter[4])
+{
+    OPENSSL_ppccap_P & PPC_CRYPTO207
+        ? ChaCha20_ctr32_vsx(out, inp, len, key, counter)
+        : OPENSSL_ppccap_P & PPC_ALTIVEC
+            ? ChaCha20_ctr32_vmx(out, inp, len, key, counter)
+            : ChaCha20_ctr32_int(out, inp, len, key, counter);
+}
+#endif
+
+#ifndef OPENSSL_NO_POLY1305
+void poly1305_init_int(void *ctx, const unsigned char key[16]);
+void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len,
+                         unsigned int padbit);
+void poly1305_emit(void *ctx, unsigned char mac[16],
+                       const unsigned int nonce[4]);
+void poly1305_init_fpu(void *ctx, const unsigned char key[16]);
+void poly1305_blocks_fpu(void *ctx, const unsigned char *inp, size_t len,
+                         unsigned int padbit);
+void poly1305_emit_fpu(void *ctx, unsigned char mac[16],
+                       const unsigned int nonce[4]);
+int poly1305_init(void *ctx, const unsigned char key[16], void *func[2]);
+int poly1305_init(void *ctx, const unsigned char key[16], void *func[2])
+{
+    if (sizeof(size_t) == 4 && (OPENSSL_ppccap_P & PPC_FPU)) {
+        poly1305_init_fpu(ctx, key);
+        func[0] = (void*)(uintptr_t)poly1305_blocks_fpu;
+        func[1] = (void*)(uintptr_t)poly1305_emit_fpu;
+    } else {
+        poly1305_init_int(ctx, key);
+        func[0] = (void*)(uintptr_t)poly1305_blocks;
+        func[1] = (void*)(uintptr_t)poly1305_emit;
+    }
+    return 1;
+}
+#endif
+
+#ifdef ECP_NISTZ256_ASM
+void ecp_nistz256_mul_mont(unsigned long res[4], const unsigned long a[4],
+                           const unsigned long b[4]);
+
+void ecp_nistz256_to_mont(unsigned long res[4], const unsigned long in[4]);
+void ecp_nistz256_to_mont(unsigned long res[4], const unsigned long in[4])
+{
+    static const unsigned long RR[] = { 0x0000000000000003U,
+                                        0xfffffffbffffffffU,
+                                        0xfffffffffffffffeU,
+                                        0x00000004fffffffdU };
+
+    ecp_nistz256_mul_mont(res, in, RR);
+}
+
+void ecp_nistz256_from_mont(unsigned long res[4], const unsigned long in[4]);
+void ecp_nistz256_from_mont(unsigned long res[4], const unsigned long in[4])
+{
+    static const unsigned long one[] = { 1, 0, 0, 0 };
+
+    ecp_nistz256_mul_mont(res, in, one);
+}
+#endif
 
 static sigjmp_buf ill_jmp;
 static void ill_handler(int sig)
@@ -45,7 +167,6 @@ void OPENSSL_ppc64_probe(void);
 void OPENSSL_altivec_probe(void);
 void OPENSSL_crypto207_probe(void);
 void OPENSSL_madd300_probe(void);
-void OPENSSL_brd31_probe(void);
 
 long OPENSSL_rdtsc_mftb(void);
 long OPENSSL_rdtsc_mfspr268(void);
@@ -99,10 +220,9 @@ size_t OPENSSL_instrument_bus2(unsigned int *out, size_t cnt, size_t max)
 # endif
 #endif
 
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#if defined(__FreeBSD__)
 # include <sys/param.h>
-# if (defined(__FreeBSD__) && __FreeBSD_version >= 1200000) || \
-    (defined(__OpenBSD__) && OpenBSD >= 202409)
+# if __FreeBSD_version >= 1200000
 #  include <sys/auxv.h>
 #  define OSSL_IMPLEMENT_GETAUXVAL
 
@@ -119,21 +239,16 @@ static unsigned long getauxval(unsigned long key)
 #endif
 
 /* I wish <sys/auxv.h> was universally available */
-#ifndef AT_HWCAP
-# define AT_HWCAP               16      /* AT_HWCAP */
-#endif
+#define HWCAP                   16      /* AT_HWCAP */
 #define HWCAP_PPC64             (1U << 30)
 #define HWCAP_ALTIVEC           (1U << 28)
 #define HWCAP_FPU               (1U << 27)
 #define HWCAP_POWER6_EXT        (1U << 9)
 #define HWCAP_VSX               (1U << 7)
 
-#ifndef AT_HWCAP2
-# define AT_HWCAP2              26      /* AT_HWCAP2 */
-#endif
+#define HWCAP2                  26      /* AT_HWCAP2 */
 #define HWCAP_VEC_CRYPTO        (1U << 25)
 #define HWCAP_ARCH_3_00         (1U << 23)
-#define HWCAP_ARCH_3_1          (1U << 18)
 
 # if defined(__GNUC__) && __GNUC__>=2
 __attribute__ ((constructor))
@@ -194,9 +309,6 @@ void OPENSSL_cpuid_setup(void)
     if (__power_set(0xffffffffU<<17))           /* POWER9 and later */
         OPENSSL_ppccap_P |= PPC_MADD300;
 
-    if (__power_set(0xffffffffU<<18))           /* POWER10 and later */
-        OPENSSL_ppccap_P |= PPC_BRD31;
-
     return;
 # endif
 #endif
@@ -225,8 +337,8 @@ void OPENSSL_cpuid_setup(void)
 
 #ifdef OSSL_IMPLEMENT_GETAUXVAL
     {
-        unsigned long hwcap = getauxval(AT_HWCAP);
-        unsigned long hwcap2 = getauxval(AT_HWCAP2);
+        unsigned long hwcap = getauxval(HWCAP);
+        unsigned long hwcap2 = getauxval(HWCAP2);
 
         if (hwcap & HWCAP_FPU) {
             OPENSSL_ppccap_P |= PPC_FPU;
@@ -252,10 +364,6 @@ void OPENSSL_cpuid_setup(void)
         if (hwcap2 & HWCAP_ARCH_3_00) {
             OPENSSL_ppccap_P |= PPC_MADD300;
         }
-
-        if (hwcap2 & HWCAP_ARCH_3_1) {
-            OPENSSL_ppccap_P |= PPC_BRD31;
-        }
     }
 #endif
 
@@ -277,7 +385,7 @@ void OPENSSL_cpuid_setup(void)
     sigaction(SIGILL, &ill_act, &ill_oact);
 
 #ifndef OSSL_IMPLEMENT_GETAUXVAL
-    if (sigsetjmp(ill_jmp, 1) == 0) {
+    if (sigsetjmp(ill_jmp,1) == 0) {
         OPENSSL_fpu_probe();
         OPENSSL_ppccap_P |= PPC_FPU;
 

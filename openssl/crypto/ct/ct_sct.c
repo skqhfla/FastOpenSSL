@@ -1,7 +1,7 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -23,8 +23,10 @@ SCT *SCT_new(void)
 {
     SCT *sct = OPENSSL_zalloc(sizeof(*sct));
 
-    if (sct == NULL)
+    if (sct == NULL) {
+        CTerr(CT_F_SCT_NEW, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
 
     sct->entry_type = CT_LOG_ENTRY_TYPE_NOT_SET;
     sct->version = SCT_VERSION_NOT_SET;
@@ -51,7 +53,7 @@ void SCT_LIST_free(STACK_OF(SCT) *a)
 int SCT_set_version(SCT *sct, sct_version_t version)
 {
     if (version != SCT_VERSION_V1) {
-        ERR_raise(ERR_LIB_CT, CT_R_UNSUPPORTED_VERSION);
+        CTerr(CT_F_SCT_SET_VERSION, CT_R_UNSUPPORTED_VERSION);
         return 0;
     }
     sct->version = version;
@@ -71,14 +73,14 @@ int SCT_set_log_entry_type(SCT *sct, ct_log_entry_type_t entry_type)
     case CT_LOG_ENTRY_TYPE_NOT_SET:
         break;
     }
-    ERR_raise(ERR_LIB_CT, CT_R_UNSUPPORTED_ENTRY_TYPE);
+    CTerr(CT_F_SCT_SET_LOG_ENTRY_TYPE, CT_R_UNSUPPORTED_ENTRY_TYPE);
     return 0;
 }
 
 int SCT_set0_log_id(SCT *sct, unsigned char *log_id, size_t log_id_len)
 {
     if (sct->version == SCT_VERSION_V1 && log_id_len != CT_V1_HASHLEN) {
-        ERR_raise(ERR_LIB_CT, CT_R_INVALID_LOG_ID_LENGTH);
+        CTerr(CT_F_SCT_SET0_LOG_ID, CT_R_INVALID_LOG_ID_LENGTH);
         return 0;
     }
 
@@ -92,7 +94,7 @@ int SCT_set0_log_id(SCT *sct, unsigned char *log_id, size_t log_id_len)
 int SCT_set1_log_id(SCT *sct, const unsigned char *log_id, size_t log_id_len)
 {
     if (sct->version == SCT_VERSION_V1 && log_id_len != CT_V1_HASHLEN) {
-        ERR_raise(ERR_LIB_CT, CT_R_INVALID_LOG_ID_LENGTH);
+        CTerr(CT_F_SCT_SET1_LOG_ID, CT_R_INVALID_LOG_ID_LENGTH);
         return 0;
     }
 
@@ -103,8 +105,10 @@ int SCT_set1_log_id(SCT *sct, const unsigned char *log_id, size_t log_id_len)
 
     if (log_id != NULL && log_id_len > 0) {
         sct->log_id = OPENSSL_memdup(log_id, log_id_len);
-        if (sct->log_id == NULL)
+        if (sct->log_id == NULL) {
+            CTerr(CT_F_SCT_SET1_LOG_ID, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
         sct->log_id_len = log_id_len;
     }
     return 1;
@@ -131,7 +135,7 @@ int SCT_set_signature_nid(SCT *sct, int nid)
         sct->validation_status = SCT_VALIDATION_STATUS_NOT_SET;
         return 1;
     default:
-        ERR_raise(ERR_LIB_CT, CT_R_UNRECOGNIZED_SIGNATURE_NID);
+        CTerr(CT_F_SCT_SET_SIGNATURE_NID, CT_R_UNRECOGNIZED_SIGNATURE_NID);
         return 0;
     }
 }
@@ -153,8 +157,10 @@ int SCT_set1_extensions(SCT *sct, const unsigned char *ext, size_t ext_len)
 
     if (ext != NULL && ext_len > 0) {
         sct->ext = OPENSSL_memdup(ext, ext_len);
-        if (sct->ext == NULL)
+        if (sct->ext == NULL) {
+            CTerr(CT_F_SCT_SET1_EXTENSIONS, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
         sct->ext_len = ext_len;
     }
     return 1;
@@ -177,8 +183,10 @@ int SCT_set1_signature(SCT *sct, const unsigned char *sig, size_t sig_len)
 
     if (sig != NULL && sig_len > 0) {
         sct->sig = OPENSSL_memdup(sig, sig_len);
-        if (sct->sig == NULL)
+        if (sct->sig == NULL) {
+            CTerr(CT_F_SCT_SET1_SIGNATURE, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
         sct->sig_len = sig_len;
     }
     return 1;
@@ -304,7 +312,7 @@ int SCT_validate(SCT *sct, const CT_POLICY_EVAL_CTX *ctx)
         return 0;
     }
 
-    sctx = SCT_CTX_new(ctx->libctx, ctx->propq);
+    sctx = SCT_CTX_new();
     if (sctx == NULL)
         goto err;
 
@@ -335,7 +343,7 @@ int SCT_validate(SCT *sct, const CT_POLICY_EVAL_CTX *ctx)
      * XXX: Potential for optimization.  This repeats some idempotent heavy
      * lifting on the certificate for each candidate SCT, and appears to not
      * use any information in the SCT itself, only the certificate is
-     * processed.  So it may make more sense to do this just once, perhaps
+     * processed.  So it may make more sense to to do this just once, perhaps
      * associated with the shared (by all SCTs) policy eval ctx.
      *
      * XXX: Failure here is global (SCT independent) and represents either an

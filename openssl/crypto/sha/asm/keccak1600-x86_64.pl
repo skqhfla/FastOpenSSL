@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
-# Copyright 2017-2024 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the Apache License 2.0 (the "License").  You may not use
+# Licensed under the OpenSSL license (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -50,10 +50,9 @@
 #	improved by 14% by replacing rotates with double-precision
 #	shift with same register as source and destination.
 
-# $output is the last argument if it looks like a file (it has an extension)
-# $flavour is the first argument if it doesn't look like a file
-$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
-$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
+$flavour = shift;
+$output  = shift;
+if ($flavour =~ /\./) { $output = $flavour; undef $flavour; }
 
 $win64=0; $win64=1 if ($flavour =~ /[nm]asm|mingw64/ || $output =~ /\.asm$/);
 
@@ -62,8 +61,7 @@ $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 ( $xlate="${dir}../../perlasm/x86_64-xlate.pl" and -f $xlate) or
 die "can't locate x86_64-xlate.pl";
 
-open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\""
-    or die "can't call $xlate: $!";
+open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\"";
 *STDOUT=*OUT;
 
 my @A = map([ 8*$_-100, 8*($_+1)-100, 8*($_+2)-100,
@@ -503,12 +501,12 @@ SHA3_absorb:
 .size	SHA3_absorb,.-SHA3_absorb
 ___
 }
-{ my ($A_flat,$out,$len,$bsz,$next) = ("%rdi","%rsi","%rdx","%rcx","%r8");
+{ my ($A_flat,$out,$len,$bsz) = ("%rdi","%rsi","%rdx","%rcx");
      ($out,$len,$bsz) = ("%r12","%r13","%r14");
 
 $code.=<<___;
 .globl	SHA3_squeeze
-.type	SHA3_squeeze,\@function,5
+.type	SHA3_squeeze,\@function,4
 .align	32
 SHA3_squeeze:
 .cfi_startproc
@@ -520,12 +518,10 @@ SHA3_squeeze:
 .cfi_push	%r14
 
 	shr	\$3,%rcx
-	mov	$A_flat,%r9
+	mov	$A_flat,%r8
 	mov	%rsi,$out
 	mov	%rdx,$len
 	mov	%rcx,$bsz
-	bt	\$0,${next}d
-	jc	.Lnext_block
 	jmp	.Loop_squeeze
 
 .align	32
@@ -533,8 +529,8 @@ SHA3_squeeze:
 	cmp	\$8,$len
 	jb	.Ltail_squeeze
 
-	mov	(%r9),%rax
-	lea	8(%r9),%r9
+	mov	(%r8),%rax
+	lea	8(%r8),%r8
 	mov	%rax,($out)
 	lea	8($out),$out
 	sub	\$8,$len		# len -= 8
@@ -542,14 +538,14 @@ SHA3_squeeze:
 
 	sub	\$1,%rcx		# bsz--
 	jnz	.Loop_squeeze
-.Lnext_block:
+
 	call	KeccakF1600
-	mov	$A_flat,%r9
+	mov	$A_flat,%r8
 	mov	$bsz,%rcx
 	jmp	.Loop_squeeze
 
 .Ltail_squeeze:
-	mov	%r9, %rsi
+	mov	%r8, %rsi
 	mov	$out,%rdi
 	mov	$len,%rcx
 	.byte	0xf3,0xa4		# rep	movsb
@@ -567,7 +563,6 @@ SHA3_squeeze:
 ___
 }
 $code.=<<___;
-.section .rodata align=256
 .align	256
 	.quad	0,0,0,0,0,0,0,0
 .type	iotas,\@object

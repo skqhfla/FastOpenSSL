@@ -1,7 +1,7 @@
 /*
- * Copyright 2004-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2004-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -34,24 +34,9 @@
 #define APPLINK_MAX     22      /* always same as last macro */
 
 #ifndef APPMACROS_ONLY
-
-/*
- * Normally, do not define APPLINK_NO_INCLUDES.  Define it if you are using
- * symbol preprocessing and do not want the preprocessing to affect the
- * following included header files.  You will need to put these
- * include lines somewhere in the file that is including applink.c.
- */
-# ifndef APPLINK_NO_INCLUDES
-#  include <stdio.h>
-#  include <io.h>
-#  include <fcntl.h>
-# endif
-
-# ifdef __BORLANDC__
-   /* _lseek in <io.h> is a function-like macro so we can't take its address */
-#  undef _lseek
-#  define _lseek lseek
-# endif
+# include <stdio.h>
+# include <io.h>
+# include <fcntl.h>
 
 static void *app_stdin(void)
 {
