@@ -1,6 +1,5 @@
 /*
- * Copyright 2001-2021 The OpenSSL Project Authors. All Rights Reserved.
- * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
+ * Copyright 2001-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,13 +7,19 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include "eng_local.h"
+/* ====================================================================
+ * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
+ * ECDH support in OpenSSL originally developed by
+ * SUN MICROSYSTEMS, INC., and contributed to the OpenSSL project.
+ */
+
+#include "eng_int.h"
 
 /*
  * The linked-list of pointers to engine types. engine_list_head incorporates
  * an implicit structural reference but engine_list_tail does not - the
- * latter is a computational optimization and only points to something that
- * is already pointed to by its predecessor in the list (or engine_list_head
+ * latter is a computational niceity and only points to something that is
+ * already pointed to by its predecessor in the list (or engine_list_head
  * itself). In the same way, the use of the "prev" pointer in each ENGINE is
  * to save excessive list iteration, it doesn't correspond to an extra
  * structural reference. Hence, engine_list_head, and each non-null "next"
@@ -23,12 +28,6 @@
  */
 static ENGINE *engine_list_head = NULL;
 static ENGINE *engine_list_tail = NULL;
-
-/*
- * The linked list of currently loaded dynamic engines.
- */
-static ENGINE *engine_dyn_list_head = NULL;
-static ENGINE *engine_dyn_list_tail = NULL;
 
 /*
  * This cleanup function is only needed internally. If it should be called,
@@ -130,85 +129,6 @@ static int engine_list_remove(ENGINE *e)
         engine_list_tail = e->prev;
     engine_free_util(e, 0);
     return 1;
-}
-
-/* Add engine to dynamic engine list. */
-int engine_add_dynamic_id(ENGINE *e, ENGINE_DYNAMIC_ID dynamic_id,
-                          int not_locked)
-{
-    int result = 0;
-    ENGINE *iterator = NULL;
-
-    if (e == NULL)
-        return 0;
-
-    if (e->dynamic_id == NULL && dynamic_id == NULL)
-        return 0;
-
-    if (not_locked && !CRYPTO_THREAD_write_lock(global_engine_lock))
-        return 0;
-
-    if (dynamic_id != NULL) {
-        iterator = engine_dyn_list_head;
-        while (iterator != NULL) {
-            if (iterator->dynamic_id == dynamic_id)
-                goto err;
-            iterator = iterator->next;
-        }
-        if (e->dynamic_id != NULL)
-            goto err;
-        e->dynamic_id = dynamic_id;
-    }
-
-    if (engine_dyn_list_head == NULL) {
-        /* We are adding to an empty list. */
-        if (engine_dyn_list_tail != NULL)
-            goto err;
-        engine_dyn_list_head = e;
-        e->prev_dyn = NULL;
-    } else {
-        /* We are adding to the tail of an existing list. */
-        if (engine_dyn_list_tail == NULL
-            || engine_dyn_list_tail->next_dyn != NULL)
-            goto err;
-        engine_dyn_list_tail->next_dyn = e;
-        e->prev_dyn = engine_dyn_list_tail;
-    }
-
-    engine_dyn_list_tail = e;
-    e->next_dyn = NULL;
-    result = 1;
-
- err:
-    if (not_locked)
-        CRYPTO_THREAD_unlock(global_engine_lock);
-    return result;
-}
-
-/* Remove engine from dynamic engine list. */
-void engine_remove_dynamic_id(ENGINE *e, int not_locked)
-{
-    if (e == NULL || e->dynamic_id == NULL)
-        return;
-
-    if (not_locked && !CRYPTO_THREAD_write_lock(global_engine_lock))
-        return;
-
-    e->dynamic_id = NULL;
-
-    /* un-link e from the chain. */
-    if (e->next_dyn != NULL)
-        e->next_dyn->prev_dyn = e->prev_dyn;
-    if (e->prev_dyn != NULL)
-        e->prev_dyn->next_dyn = e->next_dyn;
-    /* Correct our head/tail if necessary. */
-    if (engine_dyn_list_head == e)
-        engine_dyn_list_head = e->next_dyn;
-    if (engine_dyn_list_tail == e)
-        engine_dyn_list_tail = e->prev_dyn;
-
-    if (not_locked)
-        CRYPTO_THREAD_unlock(global_engine_lock);
 }
 
 /* Get the first/last "ENGINE" type available. */
@@ -357,8 +277,6 @@ static void engine_cpy(ENGINE *dest, const ENGINE *src)
     dest->load_pubkey = src->load_pubkey;
     dest->cmd_defns = src->cmd_defns;
     dest->flags = src->flags;
-    dest->dynamic_id = src->dynamic_id;
-    engine_add_dynamic_id(dest, NULL, 0);
 }
 
 ENGINE *ENGINE_by_id(const char *id)
@@ -431,6 +349,6 @@ int ENGINE_up_ref(ENGINE *e)
         ENGINEerr(ENGINE_F_ENGINE_UP_REF, ERR_R_PASSED_NULL_PARAMETER);
         return 0;
     }
-    CRYPTO_UP_REF(&e->struct_ref, &i, global_engine_lock);
+    CRYPTO_atomic_add(&e->struct_ref, 1, &i, global_engine_lock);
     return 1;
 }

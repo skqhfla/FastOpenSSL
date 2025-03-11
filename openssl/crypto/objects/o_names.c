@@ -1,5 +1,5 @@
 /*
- * Copyright 1998-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1998-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -17,8 +17,8 @@
 #include <openssl/safestack.h>
 #include <openssl/e_os2.h>
 #include "internal/thread_once.h"
-#include "crypto/lhash.h"
-#include "obj_local.h"
+#include "internal/lhash.h"
+#include "obj_lcl.h"
 #include "e_os.h"
 
 /*
@@ -44,7 +44,7 @@ static int obj_strcasecmp(const char *a, const char *b)
  */
 static LHASH_OF(OBJ_NAME) *names_lh = NULL;
 static int names_type_num = OBJ_NAME_TYPE_NUM;
-static CRYPTO_RWLOCK *obj_lock = NULL;
+static CRYPTO_RWLOCK *lock = NULL;
 
 struct name_funcs_st {
     unsigned long (*hash_func) (const char *name);
@@ -67,16 +67,10 @@ static CRYPTO_ONCE init = CRYPTO_ONCE_STATIC_INIT;
 DEFINE_RUN_ONCE_STATIC(o_names_init)
 {
     CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_DISABLE);
-    names_lh = NULL;
-    obj_lock = CRYPTO_THREAD_lock_new();
-    if (obj_lock != NULL)
-        names_lh = lh_OBJ_NAME_new(obj_name_hash, obj_name_cmp);
-    if (names_lh == NULL) {
-        CRYPTO_THREAD_lock_free(obj_lock);
-        obj_lock = NULL;
-    }
+    names_lh = lh_OBJ_NAME_new(obj_name_hash, obj_name_cmp);
+    lock = CRYPTO_THREAD_lock_new();
     CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ENABLE);
-    return names_lh != NULL && obj_lock != NULL;
+    return names_lh != NULL && lock != NULL;
 }
 
 int OBJ_NAME_init(void)
@@ -94,7 +88,7 @@ int OBJ_NAME_new_index(unsigned long (*hash_func) (const char *),
     if (!OBJ_NAME_init())
         return 0;
 
-    CRYPTO_THREAD_write_lock(obj_lock);
+    CRYPTO_THREAD_write_lock(lock);
 
     if (name_funcs_stack == NULL) {
         CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_DISABLE);
@@ -139,7 +133,7 @@ int OBJ_NAME_new_index(unsigned long (*hash_func) (const char *),
         name_funcs->free_func = free_func;
 
 out:
-    CRYPTO_THREAD_unlock(obj_lock);
+    CRYPTO_THREAD_unlock(lock);
     return ret;
 }
 
@@ -185,7 +179,7 @@ const char *OBJ_NAME_get(const char *name, int type)
         return NULL;
     if (!OBJ_NAME_init())
         return NULL;
-    CRYPTO_THREAD_read_lock(obj_lock);
+    CRYPTO_THREAD_read_lock(lock);
 
     alias = type & OBJ_NAME_ALIAS;
     type &= ~OBJ_NAME_ALIAS;
@@ -207,7 +201,7 @@ const char *OBJ_NAME_get(const char *name, int type)
         }
     }
 
-    CRYPTO_THREAD_unlock(obj_lock);
+    CRYPTO_THREAD_unlock(lock);    
     return value;
 }
 
@@ -217,21 +211,23 @@ int OBJ_NAME_add(const char *name, int type, const char *data)
     int alias, ok = 0;
 
     if (!OBJ_NAME_init())
-        return 0;
+        return 0;    
 
     alias = type & OBJ_NAME_ALIAS;
     type &= ~OBJ_NAME_ALIAS;
 
     onp = OPENSSL_malloc(sizeof(*onp));
-    if (onp == NULL)
-        return 0;
+    if (onp == NULL) {
+        /* ERROR */
+        goto unlock;
+    }
 
     onp->name = name;
     onp->alias = alias;
     onp->type = type;
     onp->data = data;
 
-    CRYPTO_THREAD_write_lock(obj_lock);
+    CRYPTO_THREAD_write_lock(lock);
 
     ret = lh_OBJ_NAME_insert(names_lh, onp);
     if (ret != NULL) {
@@ -258,7 +254,7 @@ int OBJ_NAME_add(const char *name, int type, const char *data)
     ok = 1;
 
 unlock:
-    CRYPTO_THREAD_unlock(obj_lock);
+    CRYPTO_THREAD_unlock(lock);
     return ok;
 }
 
@@ -270,7 +266,7 @@ int OBJ_NAME_remove(const char *name, int type)
     if (!OBJ_NAME_init())
         return 0;
 
-    CRYPTO_THREAD_write_lock(obj_lock);
+    CRYPTO_THREAD_write_lock(lock);
 
     type &= ~OBJ_NAME_ALIAS;
     on.name = name;
@@ -292,7 +288,7 @@ int OBJ_NAME_remove(const char *name, int type)
         ok = 1;
     }
 
-    CRYPTO_THREAD_unlock(obj_lock);
+    CRYPTO_THREAD_unlock(lock);
     return ok;
 }
 
@@ -401,10 +397,10 @@ void OBJ_NAME_cleanup(int type)
     if (type < 0) {
         lh_OBJ_NAME_free(names_lh);
         sk_NAME_FUNCS_pop_free(name_funcs_stack, name_funcs_free);
-        CRYPTO_THREAD_lock_free(obj_lock);
+        CRYPTO_THREAD_lock_free(lock);
         names_lh = NULL;
         name_funcs_stack = NULL;
-        obj_lock = NULL;
+        lock = NULL;
     } else
         lh_OBJ_NAME_set_down_load(names_lh, down_load);
 }

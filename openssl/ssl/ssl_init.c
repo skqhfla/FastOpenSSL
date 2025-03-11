@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -12,7 +12,9 @@
 #include "internal/err.h"
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
-#include "ssl_local.h"
+#include <openssl/conf.h>
+#include <assert.h>
+#include "ssl_locl.h"
 #include "internal/thread_once.h"
 
 static int stopped;
@@ -59,10 +61,6 @@ DEFINE_RUN_ONCE_STATIC(ossl_init_ssl_base)
     EVP_add_cipher(EVP_aes_256_cbc_hmac_sha1());
     EVP_add_cipher(EVP_aes_128_cbc_hmac_sha256());
     EVP_add_cipher(EVP_aes_256_cbc_hmac_sha256());
-#ifndef OPENSSL_NO_ARIA
-    EVP_add_cipher(EVP_aria_128_gcm());
-    EVP_add_cipher(EVP_aria_256_gcm());
-#endif
 #ifndef OPENSSL_NO_CAMELLIA
     EVP_add_cipher(EVP_camellia_128_cbc());
     EVP_add_cipher(EVP_camellia_256_cbc());
@@ -99,13 +97,13 @@ DEFINE_RUN_ONCE_STATIC(ossl_init_ssl_base)
     SSL_COMP_get_compression_methods();
 #endif
     /* initialize cipher/digest methods table */
-    if (!ssl_load_ciphers())
-        return 0;
+    ssl_load_ciphers();
 
 #ifdef OPENSSL_INIT_DEBUG
     fprintf(stderr, "OPENSSL_INIT: ossl_init_ssl_base: "
             "SSL_add_ssl_module()\n");
 #endif
+    SSL_add_ssl_module();
     /*
      * We ignore an error return here. Not much we can do - but not that bad
      * either. We can still safely continue.
@@ -116,7 +114,7 @@ DEFINE_RUN_ONCE_STATIC(ossl_init_ssl_base)
 }
 
 static CRYPTO_ONCE ssl_strings = CRYPTO_ONCE_STATIC_INIT;
-
+static int ssl_strings_inited = 0;
 DEFINE_RUN_ONCE_STATIC(ossl_init_load_ssl_strings)
 {
     /*
@@ -129,12 +127,12 @@ DEFINE_RUN_ONCE_STATIC(ossl_init_load_ssl_strings)
             "ERR_load_SSL_strings()\n");
 # endif
     ERR_load_SSL_strings();
+    ssl_strings_inited = 1;
 #endif
     return 1;
 }
 
-DEFINE_RUN_ONCE_STATIC_ALT(ossl_init_no_load_ssl_strings,
-                           ossl_init_load_ssl_strings)
+DEFINE_RUN_ONCE_STATIC(ossl_init_no_load_ssl_strings)
 {
     /* Do nothing in this case */
     return 1;
@@ -155,6 +153,20 @@ static void ssl_library_stop(void)
 # endif
         ssl_comp_free_compression_methods_int();
 #endif
+    }
+
+    if (ssl_strings_inited) {
+#ifdef OPENSSL_INIT_DEBUG
+        fprintf(stderr, "OPENSSL_INIT: ssl_library_stop: "
+                "err_free_strings_int()\n");
+#endif
+        /*
+         * If both crypto and ssl error strings are inited we will end up
+         * calling err_free_strings_int() twice - but that's ok. The second
+         * time will be a no-op. It's easier to do that than to try and track
+         * between the two libraries whether they have both been inited.
+         */
+        err_free_strings_int();
     }
 }
 
@@ -180,22 +192,17 @@ int OPENSSL_init_ssl(uint64_t opts, const OPENSSL_INIT_SETTINGS * settings)
         return 0;
     }
 
-    opts |= OPENSSL_INIT_ADD_ALL_CIPHERS
-         |  OPENSSL_INIT_ADD_ALL_DIGESTS;
-#ifndef OPENSSL_NO_AUTOLOAD_CONFIG
-    if ((opts & OPENSSL_INIT_NO_LOAD_CONFIG) == 0)
-        opts |= OPENSSL_INIT_LOAD_CONFIG;
-#endif
-
-    if (!OPENSSL_init_crypto(opts, settings))
+    if (!OPENSSL_init_crypto(opts
+                             | OPENSSL_INIT_ADD_ALL_CIPHERS
+                             | OPENSSL_INIT_ADD_ALL_DIGESTS,
+                             settings))
         return 0;
 
     if (!RUN_ONCE(&ssl_base, ossl_init_ssl_base))
         return 0;
 
     if ((opts & OPENSSL_INIT_NO_LOAD_SSL_STRINGS)
-        && !RUN_ONCE_ALT(&ssl_strings, ossl_init_no_load_ssl_strings,
-                         ossl_init_load_ssl_strings))
+        && !RUN_ONCE(&ssl_strings, ossl_init_no_load_ssl_strings))
         return 0;
 
     if ((opts & OPENSSL_INIT_LOAD_SSL_STRINGS)

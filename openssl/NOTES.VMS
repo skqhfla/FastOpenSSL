@@ -18,7 +18,7 @@
  An ANSI C compiled is needed among other things.  This means that
  VAX C is not and will not be supported.
 
- We have only tested with DEC C (aka HP VMS C / VSI C) and require
+ We have only tested with DEC C (a.k.a HP VMS C / VSI C) and require
  version 7.1 or later.  Compiling with a different ANSI C compiler may
  require some work.
 
@@ -42,7 +42,7 @@
  for now is to rename the OpenSSL source directory, as follows (please
  adjust for the actual source directory name you have):
 
-    $ rename openssl-1^.1^.0.DIR openssl-1_1_0.DIR
+    $ rename openssl-1^.1^.0.DIR openssl-1_1_0.DIR 
 
 
  About MMS and DCL
@@ -56,32 +56,6 @@
  to use.
 
 
- About debugging
- ---------------
-
- If you build for debugging, the default on VMS is that image
- activation starts the debugger automatically, giving you a debug
- prompt.  Unfortunately, this disrupts all other uses, such as running
- test programs in the test framework.
-
- Generally speaking, if you build for debugging, only use the programs
- directly for debugging.  Do not try to use them from a script, such
- as running the test suite.
-
- *The following is not available on Alpha*
-
- As a compromise, we're turning off the flag that makes the debugger
- start automatically.  If there is a program that you need to debug,
- you need to turn that flag back on first, for example:
-
-    $ set image /flag=call_debug [.test]evp_test.exe
-
- Then just run it and you will find yourself in a debugging session.
- When done, we recommend that you turn that flag back off:
-
-    $ set image /flag=nocall_debug [.test]evp_test.exe
-
-
  Checking the distribution
  -------------------------
 
@@ -90,9 +64,9 @@
  Unix mount point.
 
  The easiest way to check if everything got through as it should is to
- check that this file exists:
+ check for one of the following files:
 
-   [.include.openssl]opensslconf^.h.in
+   [.crypto]opensslconf^.h.in
 
  The best way to get a correct distribution is to download the gzipped
  tar file from ftp://ftp.openssl.org/source/, use GZIP -d to uncompress
@@ -105,11 +79,3 @@
  Should you need it, you can find UnZip for VMS here:
 
    http://www.info-zip.org/UnZip.html
-
-
- How the value of 'arch' is determined
- -------------------------------------
-
- 'arch' is mentioned in INSTALL.  It's value is determined like this:
-
-    arch = f$edit( f$getsyi( "arch_name"), "upcase")

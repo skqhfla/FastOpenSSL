@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2012-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,17 +7,10 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include <string.h>
-
-#include <openssl/e_os2.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
-#include "internal/nelem.h"
-#include "testutil.h"
-
-#ifdef OPENSSL_SYS_WINDOWS
-# define strcasecmp _stricmp
-#endif
+#include "../e_os.h"
+#include <string.h>
 
 static const char *const names[] = {
     "a", "b", ".", "*", "@",
@@ -79,7 +72,6 @@ static const char *const exceptions[] = {
 static int is_exception(const char *msg)
 {
     const char *const *p;
-
     for (p = exceptions; *p; ++p)
         if (strcmp(msg, *p) == 0)
             return 1;
@@ -91,16 +83,13 @@ static int set_cn(X509 *crt, ...)
     int ret = 0;
     X509_NAME *n = NULL;
     va_list ap;
-
     va_start(ap, crt);
     n = X509_NAME_new();
     if (n == NULL)
         goto out;
-
     while (1) {
         int nid;
         const char *name;
-
         nid = va_arg(ap, int);
         if (nid == 0)
             break;
@@ -249,55 +238,59 @@ static const struct set_name_fn name_fns[] = {
     {set_email_and_cn, "set emailAddress", 0, 1},
     {set_altname_dns, "set dnsName", 1, 0},
     {set_altname_email, "set rfc822Name", 0, 1},
+    {NULL, NULL, 0}
 };
 
-static X509 *make_cert(void)
+static X509 *make_cert()
 {
+    X509 *ret = NULL;
     X509 *crt = NULL;
-
-    if (!TEST_ptr(crt = X509_new()))
-        return NULL;
-    if (!TEST_true(X509_set_version(crt, 2))) {
-        X509_free(crt);
-        return NULL;
-    }
-    return crt;
+    X509_NAME *issuer = NULL;
+    crt = X509_new();
+    if (crt == NULL)
+        goto out;
+    if (!X509_set_version(crt, 3))
+        goto out;
+    ret = crt;
+    crt = NULL;
+ out:
+    X509_NAME_free(issuer);
+    return ret;
 }
 
-static int check_message(const struct set_name_fn *fn, const char *op,
-                         const char *nameincert, int match, const char *name)
+static int errors;
+
+static void check_message(const struct set_name_fn *fn, const char *op,
+                          const char *nameincert, int match, const char *name)
 {
     char msg[1024];
-
     if (match < 0)
-        return 1;
+        return;
     BIO_snprintf(msg, sizeof(msg), "%s: %s: [%s] %s [%s]",
                  fn->name, op, nameincert,
                  match ? "matches" : "does not match", name);
     if (is_exception(msg))
-        return 1;
-    TEST_error("%s", msg);
-    return 0;
+        return;
+    puts(msg);
+    ++errors;
 }
 
-static int run_cert(X509 *crt, const char *nameincert,
+static void run_cert(X509 *crt, const char *nameincert,
                      const struct set_name_fn *fn)
 {
     const char *const *pname = names;
-    int failed = 0;
-
-    for (; *pname != NULL; ++pname) {
+    while (*pname) {
         int samename = strcasecmp(nameincert, *pname) == 0;
         size_t namelen = strlen(*pname);
-        char *name = OPENSSL_malloc(namelen);
+        char *name = malloc(namelen);
         int match, ret;
-
         memcpy(name, *pname, namelen);
 
+        ret = X509_check_host(crt, name, namelen, 0, NULL);
         match = -1;
-        if (!TEST_int_ge(ret = X509_check_host(crt, name, namelen, 0, NULL),
-                         0)) {
-            failed = 1;
+        if (ret < 0) {
+            fprintf(stderr, "internal error in X509_check_host");
+            ++errors;
         } else if (fn->host) {
             if (ret == 1 && !samename)
                 match = 1;
@@ -305,14 +298,14 @@ static int run_cert(X509 *crt, const char *nameincert,
                 match = 0;
         } else if (ret == 1)
             match = 1;
-        if (!TEST_true(check_message(fn, "host", nameincert, match, *pname)))
-            failed = 1;
+        check_message(fn, "host", nameincert, match, *pname);
 
+        ret = X509_check_host(crt, name, namelen,
+                              X509_CHECK_FLAG_NO_WILDCARDS, NULL);
         match = -1;
-        if (!TEST_int_ge(ret = X509_check_host(crt, name, namelen,
-                                               X509_CHECK_FLAG_NO_WILDCARDS,
-                                               NULL), 0)) {
-            failed = 1;
+        if (ret < 0) {
+            fprintf(stderr, "internal error in X509_check_host");
+            ++errors;
         } else if (fn->host) {
             if (ret == 1 && !samename)
                 match = 1;
@@ -320,12 +313,10 @@ static int run_cert(X509 *crt, const char *nameincert,
                 match = 0;
         } else if (ret == 1)
             match = 1;
-        if (!TEST_true(check_message(fn, "host-no-wildcards",
-                                     nameincert, match, *pname)))
-            failed = 1;
+        check_message(fn, "host-no-wildcards", nameincert, match, *pname);
 
-        match = -1;
         ret = X509_check_email(crt, name, namelen, 0);
+        match = -1;
         if (fn->email) {
             if (ret && !samename)
                 match = 1;
@@ -333,386 +324,32 @@ static int run_cert(X509 *crt, const char *nameincert,
                 match = 0;
         } else if (ret)
             match = 1;
-        if (!TEST_true(check_message(fn, "email", nameincert, match, *pname)))
-            failed = 1;
-        OPENSSL_free(name);
+        check_message(fn, "email", nameincert, match, *pname);
+        ++pname;
+        free(name);
     }
-
-    return failed == 0;
 }
 
-static int call_run_cert(int i)
+int main(void)
 {
-    int failed = 0;
-    const struct set_name_fn *pfn = &name_fns[i];
-    X509 *crt;
-    const char *const *pname;
-
-    TEST_info("%s", pfn->name);
-    for (pname = names; *pname != NULL; pname++) {
-        if (!TEST_ptr(crt = make_cert())
-             || !TEST_true(pfn->fn(crt, *pname))
-             || !run_cert(crt, *pname, pfn))
-            failed = 1;
-        X509_free(crt);
-    }
-    return failed == 0;
-}
-
-static struct gennamedata {
-    const unsigned char der[22];
-    size_t derlen;
-} gennames[] = {
-    {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.1 }
-        *   [0] {
-        *     SEQUENCE {}
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x13, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x01, 0xa0, 0x02, 0x30, 0x00
-        },
-        21
-    }, {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.1 }
-        *   [0] {
-        *     [APPLICATION 0] {}
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x13, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x01, 0xa0, 0x02, 0x60, 0x00
-        },
-        21
-    }, {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.1 }
-        *   [0] {
-        *     UTF8String { "a" }
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x14, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x01, 0xa0, 0x03, 0x0c, 0x01, 0x61
-        },
-        22
-    }, {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.2 }
-        *   [0] {
-        *     UTF8String { "a" }
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x14, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x02, 0xa0, 0x03, 0x0c, 0x01, 0x61
-        },
-        22
-    }, {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.1 }
-        *   [0] {
-        *     UTF8String { "b" }
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x14, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x01, 0xa0, 0x03, 0x0c, 0x01, 0x62
-        },
-        22
-    }, {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.1 }
-        *   [0] {
-        *     BOOLEAN { TRUE }
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x14, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x01, 0xa0, 0x03, 0x01, 0x01, 0xff
-        },
-        22
-    }, {
-        /*
-        * [0] {
-        *   OBJECT_IDENTIFIER { 1.2.840.113554.4.1.72585.2.1 }
-        *   [0] {
-        *     BOOLEAN { FALSE }
-        *   }
-        * }
-        */
-        {
-            0xa0, 0x14, 0x06, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04,
-            0x01, 0x84, 0xb7, 0x09, 0x02, 0x01, 0xa0, 0x03, 0x01, 0x01, 0x00
-        },
-        22
-    }, {
-        /* [1 PRIMITIVE] { "a" } */
-        {
-            0x81, 0x01, 0x61
-        },
-        3
-    }, {
-        /* [1 PRIMITIVE] { "b" } */
-        {
-            0x81, 0x01, 0x62
-        },
-        3
-    }, {
-        /* [2 PRIMITIVE] { "a" } */
-        {
-            0x82, 0x01, 0x61
-        },
-        3
-    }, {
-        /* [2 PRIMITIVE] { "b" } */
-        {
-            0x82, 0x01, 0x62
-        },
-        3
-    }, {
-        /*
-        * [4] {
-        *   SEQUENCE {
-        *     SET {
-        *       SEQUENCE {
-        *         # commonName
-        *         OBJECT_IDENTIFIER { 2.5.4.3 }
-        *         UTF8String { "a" }
-        *       }
-        *     }
-        *   }
-        * }
-        */
-        {
-            0xa4, 0x0e, 0x30, 0x0c, 0x31, 0x0a, 0x30, 0x08, 0x06, 0x03, 0x55,
-            0x04, 0x03, 0x0c, 0x01, 0x61
-        },
-        16
-    }, {
-        /*
-        * [4] {
-        *   SEQUENCE {
-        *     SET {
-        *       SEQUENCE {
-        *         # commonName
-        *         OBJECT_IDENTIFIER { 2.5.4.3 }
-        *         UTF8String { "b" }
-        *       }
-        *     }
-        *   }
-        * }
-        */
-        {
-            0xa4, 0x0e, 0x30, 0x0c, 0x31, 0x0a, 0x30, 0x08, 0x06, 0x03, 0x55,
-            0x04, 0x03, 0x0c, 0x01, 0x62
-        },
-        16
-    }, {
-        /*
-        * [5] {
-        *   [1] {
-        *     UTF8String { "a" }
-        *   }
-        * }
-        */
-        {
-            0xa5, 0x05, 0xa1, 0x03, 0x0c, 0x01, 0x61
-        },
-        7
-    }, {
-        /*
-        * [5] {
-        *   [1] {
-        *     UTF8String { "b" }
-        *   }
-        * }
-        */
-        {
-            0xa5, 0x05, 0xa1, 0x03, 0x0c, 0x01, 0x62
-        },
-        7
-    }, {
-        /*
-        * [5] {
-        *   [0] {
-        *     UTF8String {}
-        *   }
-        *   [1] {
-        *     UTF8String { "a" }
-        *   }
-        * }
-        */
-        {
-            0xa5, 0x09, 0xa0, 0x02, 0x0c, 0x00, 0xa1, 0x03, 0x0c, 0x01, 0x61
-        },
-        11
-    }, {
-        /*
-        * [5] {
-        *   [0] {
-        *     UTF8String { "a" }
-        *   }
-        *   [1] {
-        *     UTF8String { "a" }
-        *   }
-        * }
-        */
-        {
-            0xa5, 0x0a, 0xa0, 0x03, 0x0c, 0x01, 0x61, 0xa1, 0x03, 0x0c, 0x01,
-            0x61
-        },
-        12
-    }, {
-        /*
-        * [5] {
-        *   [0] {
-        *     UTF8String { "b" }
-        *   }
-        *   [1] {
-        *     UTF8String { "a" }
-        *   }
-        * }
-        */
-        {
-            0xa5, 0x0a, 0xa0, 0x03, 0x0c, 0x01, 0x62, 0xa1, 0x03, 0x0c, 0x01,
-            0x61
-        },
-        12
-    }, {
-        /* [6 PRIMITIVE] { "a" } */
-        {
-            0x86, 0x01, 0x61
-        },
-        3
-    }, {
-        /* [6 PRIMITIVE] { "b" } */
-        {
-            0x86, 0x01, 0x62
-        },
-        3
-    }, {
-        /* [7 PRIMITIVE] { `11111111` } */
-        {
-            0x87, 0x04, 0x11, 0x11, 0x11, 0x11
-        },
-        6
-    }, {
-        /* [7 PRIMITIVE] { `22222222`} */
-        {
-            0x87, 0x04, 0x22, 0x22, 0x22, 0x22
-        },
-        6
-    }, {
-        /* [7 PRIMITIVE] { `11111111111111111111111111111111` } */
-        {
-            0x87, 0x10, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
-            0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11
-        },
-        18
-    }, {
-        /* [7 PRIMITIVE] { `22222222222222222222222222222222` } */
-        {
-            0x87, 0x10, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
-            0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22
-        },
-        18
-    }, {
-        /* [8 PRIMITIVE] { 1.2.840.113554.4.1.72585.2.1 } */
-        {
-            0x88, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04, 0x01, 0x84,
-            0xb7, 0x09, 0x02, 0x01
-        },
-        15
-    }, {
-        /* [8 PRIMITIVE] { 1.2.840.113554.4.1.72585.2.2 } */
-        {
-            0x88, 0x0d, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x04, 0x01, 0x84,
-            0xb7, 0x09, 0x02, 0x02
-        },
-        15
-    }, {
-        /*
-         * Regression test for CVE-2023-0286.
-         */
-        {
-            0xa3, 0x00
-        },
-        2
-    }
-};
-
-static int test_GENERAL_NAME_cmp(void)
-{
-    size_t i, j;
-    GENERAL_NAME **namesa = OPENSSL_malloc(sizeof(*namesa)
-                                           * OSSL_NELEM(gennames));
-    GENERAL_NAME **namesb = OPENSSL_malloc(sizeof(*namesb)
-                                           * OSSL_NELEM(gennames));
-    int testresult = 0;
-
-    if (!TEST_ptr(namesa) || !TEST_ptr(namesb))
-        goto end;
-
-    for (i = 0; i < OSSL_NELEM(gennames); i++) {
-        const unsigned char *derp = gennames[i].der;
-
-        /*
-         * We create two versions of each GENERAL_NAME so that we ensure when
-         * we compare them they are always different pointers.
-         */
-        namesa[i] = d2i_GENERAL_NAME(NULL, &derp, gennames[i].derlen);
-        derp = gennames[i].der;
-        namesb[i] = d2i_GENERAL_NAME(NULL, &derp, gennames[i].derlen);
-        if (!TEST_ptr(namesa[i]) || !TEST_ptr(namesb[i]))
-            goto end;
-    }
-
-    /* Every name should be equal to itself and not equal to any others. */
-    for (i = 0; i < OSSL_NELEM(gennames); i++) {
-        for (j = 0; j < OSSL_NELEM(gennames); j++) {
-            if (i == j) {
-                if (!TEST_int_eq(GENERAL_NAME_cmp(namesa[i], namesb[j]), 0))
-                    goto end;
-            } else {
-                if (!TEST_int_ne(GENERAL_NAME_cmp(namesa[i], namesb[j]), 0))
-                    goto end;
+    const struct set_name_fn *pfn = name_fns;
+    while (pfn->name) {
+        const char *const *pname = names;
+        while (*pname) {
+            X509 *crt = make_cert();
+            if (crt == NULL) {
+                fprintf(stderr, "make_cert failed\n");
+                return 1;
             }
+            if (!pfn->fn(crt, *pname)) {
+                fprintf(stderr, "X509 name setting failed\n");
+                return 1;
+            }
+            run_cert(crt, *pname, pfn);
+            X509_free(crt);
+            ++pname;
         }
+        ++pfn;
     }
-    testresult = 1;
-
- end:
-    for (i = 0; i < OSSL_NELEM(gennames); i++) {
-        if (namesa != NULL)
-            GENERAL_NAME_free(namesa[i]);
-        if (namesb != NULL)
-            GENERAL_NAME_free(namesb[i]);
-    }
-    OPENSSL_free(namesa);
-    OPENSSL_free(namesb);
-
-    return testresult;
-}
-
-int setup_tests(void)
-{
-    ADD_ALL_TESTS(call_run_cert, OSSL_NELEM(name_fns));
-    ADD_TEST(test_GENERAL_NAME_cmp);
-    return 1;
+    return errors > 0 ? 1 : 0;
 }

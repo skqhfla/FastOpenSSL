@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2004-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -10,9 +10,8 @@
 #include <openssl/asn1.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
-#include <openssl/err.h>
 
-#include "pcy_local.h"
+#include "pcy_int.h"
 
 static int node_cmp(const X509_POLICY_NODE *const *a,
                     const X509_POLICY_NODE *const *b)
@@ -36,6 +35,9 @@ X509_POLICY_NODE *tree_find_sk(STACK_OF(X509_POLICY_NODE) *nodes,
     l.data = &n;
 
     idx = sk_X509_POLICY_NODE_find(nodes, &l);
+    if (idx == -1)
+        return NULL;
+
     return sk_X509_POLICY_NODE_value(nodes, idx);
 
 }
@@ -59,23 +61,16 @@ X509_POLICY_NODE *level_find_node(const X509_POLICY_LEVEL *level,
 X509_POLICY_NODE *level_add_node(X509_POLICY_LEVEL *level,
                                  X509_POLICY_DATA *data,
                                  X509_POLICY_NODE *parent,
-                                 X509_POLICY_TREE *tree,
-                                 int extra_data)
+                                 X509_POLICY_TREE *tree)
 {
     X509_POLICY_NODE *node;
 
-    /* Verify that the tree isn't too large.  This mitigates CVE-2023-0464 */
-    if (tree->node_maximum > 0 && tree->node_count >= tree->node_maximum)
-        return NULL;
-
     node = OPENSSL_zalloc(sizeof(*node));
-    if (node == NULL) {
-        X509V3err(X509V3_F_LEVEL_ADD_NODE, ERR_R_MALLOC_FAILURE);
+    if (node == NULL)
         return NULL;
-    }
     node->data = data;
     node->parent = parent;
-    if (level != NULL) {
+    if (level) {
         if (OBJ_obj2nid(data->valid_policy) == NID_any_policy) {
             if (level->anyPolicy)
                 goto node_error;
@@ -84,43 +79,26 @@ X509_POLICY_NODE *level_add_node(X509_POLICY_LEVEL *level,
 
             if (level->nodes == NULL)
                 level->nodes = policy_node_cmp_new();
-            if (level->nodes == NULL) {
-                X509V3err(X509V3_F_LEVEL_ADD_NODE, ERR_R_MALLOC_FAILURE);
+            if (level->nodes == NULL)
                 goto node_error;
-            }
-            if (!sk_X509_POLICY_NODE_push(level->nodes, node)) {
-                X509V3err(X509V3_F_LEVEL_ADD_NODE, ERR_R_MALLOC_FAILURE);
+            if (!sk_X509_POLICY_NODE_push(level->nodes, node))
                 goto node_error;
-            }
         }
     }
 
-    if (extra_data) {
+    if (tree) {
         if (tree->extra_data == NULL)
             tree->extra_data = sk_X509_POLICY_DATA_new_null();
-        if (tree->extra_data == NULL){
-            X509V3err(X509V3_F_LEVEL_ADD_NODE, ERR_R_MALLOC_FAILURE);
-            goto extra_data_error;
-        }
-        if (!sk_X509_POLICY_DATA_push(tree->extra_data, data)) {
-            X509V3err(X509V3_F_LEVEL_ADD_NODE, ERR_R_MALLOC_FAILURE);
-            goto extra_data_error;
-        }
+        if (tree->extra_data == NULL)
+            goto node_error;
+        if (!sk_X509_POLICY_DATA_push(tree->extra_data, data))
+            goto node_error;
     }
 
-    tree->node_count++;
     if (parent)
         parent->nchild++;
 
     return node;
-
- extra_data_error:
-    if (level != NULL) {
-        if (level->anyPolicy == node)
-            level->anyPolicy = NULL;
-        else
-            (void) sk_X509_POLICY_NODE_pop(level->nodes);
-    }
 
  node_error:
     policy_node_free(node);

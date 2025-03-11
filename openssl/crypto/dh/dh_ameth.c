@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -11,10 +11,10 @@
 #include "internal/cryptlib.h"
 #include <openssl/x509.h>
 #include <openssl/asn1.h>
-#include "dh_local.h"
+#include "dh_locl.h"
 #include <openssl/bn.h>
-#include "crypto/asn1.h"
-#include "crypto/evp.h"
+#include "internal/asn1_int.h"
+#include "internal/evp_int.h"
 #include <openssl/cms.h>
 
 /*
@@ -326,7 +326,7 @@ static int do_dh_print(BIO *bp, const DH *x, int indent, int ptype)
                 goto err;
         }
         if (BIO_write(bp, "\n", 1) <= 0)
-            return 0;
+            return (0);
     }
     if (x->counter && !ASN1_bn_print(bp, "counter:", x->counter, NULL, indent))
         goto err;
@@ -346,7 +346,7 @@ static int do_dh_print(BIO *bp, const DH *x, int indent, int ptype)
 
 static int int_dh_size(const EVP_PKEY *pkey)
 {
-    return DH_size(pkey->pkey.dh);
+    return (DH_size(pkey->pkey.dh));
 }
 
 static int dh_bits(const EVP_PKEY *pkey)
@@ -374,19 +374,13 @@ static int dh_cmp_parameters(const EVP_PKEY *a, const EVP_PKEY *b)
 static int int_dh_bn_cpy(BIGNUM **dst, const BIGNUM *src)
 {
     BIGNUM *a;
-
-    /*
-     * If source is read only just copy the pointer, so
-     * we don't have to reallocate it.
-     */
-    if (src == NULL)
+    if (src) {
+        a = BN_dup(src);
+        if (!a)
+            return 0;
+    } else
         a = NULL;
-    else if (BN_get_flags(src, BN_FLG_STATIC_DATA)
-                && !BN_get_flags(src, BN_FLG_MALLOCED))
-        a = (BIGNUM *)src;
-    else if ((a = BN_dup(src)) == NULL)
-        return 0;
-    BN_clear_free(*dst);
+    BN_free(*dst);
     *dst = a;
     return 1;
 }
@@ -509,25 +503,6 @@ static int dh_pkey_ctrl(EVP_PKEY *pkey, int op, long arg1, void *arg2)
 
 }
 
-static int dh_pkey_public_check(const EVP_PKEY *pkey)
-{
-    DH *dh = pkey->pkey.dh;
-
-    if (dh->pub_key == NULL) {
-        DHerr(DH_F_DH_PKEY_PUBLIC_CHECK, DH_R_MISSING_PUBKEY);
-        return 0;
-    }
-
-    return DH_check_pub_key_ex(dh, dh->pub_key);
-}
-
-static int dh_pkey_param_check(const EVP_PKEY *pkey)
-{
-    DH *dh = pkey->pkey.dh;
-
-    return DH_check_ex(dh);
-}
-
 const EVP_PKEY_ASN1_METHOD dh_asn1_meth = {
     EVP_PKEY_DH,
     EVP_PKEY_DH,
@@ -558,13 +533,7 @@ const EVP_PKEY_ASN1_METHOD dh_asn1_meth = {
     0,
 
     int_dh_free,
-    0,
-
-    0, 0, 0, 0, 0,
-
-    0,
-    dh_pkey_public_check,
-    dh_pkey_param_check
+    0
 };
 
 const EVP_PKEY_ASN1_METHOD dhx_asn1_meth = {
@@ -597,13 +566,7 @@ const EVP_PKEY_ASN1_METHOD dhx_asn1_meth = {
     0,
 
     int_dh_free,
-    dh_pkey_ctrl,
-
-    0, 0, 0, 0, 0,
-
-    0,
-    dh_pkey_public_check,
-    dh_pkey_param_check
+    dh_pkey_ctrl
 };
 
 #ifndef OPENSSL_NO_CMS
@@ -629,18 +592,16 @@ static int dh_cms_set_peerkey(EVP_PKEY_CTX *pctx,
         goto err;
 
     pk = EVP_PKEY_CTX_get0_pkey(pctx);
-    if (pk == NULL || pk->type != EVP_PKEY_DHX)
+    if (!pk)
         goto err;
-
+    if (pk->type != EVP_PKEY_DHX)
+        goto err;
     /* Get parameters from parent key */
     dhpeer = DHparams_dup(pk->pkey.dh);
-    if (dhpeer == NULL)
-        goto err;
-
     /* We have parameters now set public key */
     plen = ASN1_STRING_length(pubkey);
     p = ASN1_STRING_get0_data(pubkey);
-    if (p == NULL || plen == 0)
+    if (!p || !plen)
         goto err;
 
     if ((public_key = d2i_ASN1_INTEGER(NULL, &p, plen)) == NULL) {
@@ -657,7 +618,6 @@ static int dh_cms_set_peerkey(EVP_PKEY_CTX *pctx,
     pkpeer = EVP_PKEY_new();
     if (pkpeer == NULL)
         goto err;
-
     EVP_PKEY_assign(pkpeer, pk->ameth->pkey_id, dhpeer);
     dhpeer = NULL;
     if (EVP_PKEY_derive_set_peer(pctx, pkpeer) > 0)
@@ -904,7 +864,6 @@ static int dh_cms_encrypt(CMS_RecipientInfo *ri)
  err:
     OPENSSL_free(penc);
     X509_ALGOR_free(wrap_alg);
-    OPENSSL_free(dukm);
     return rv;
 }
 

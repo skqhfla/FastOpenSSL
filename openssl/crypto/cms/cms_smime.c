@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -13,8 +13,8 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 #include <openssl/cms.h>
-#include "cms_local.h"
-#include "crypto/asn1.h"
+#include "cms_lcl.h"
+#include "internal/asn1_int.h"
 
 static BIO *cms_get_text_bio(BIO *out, unsigned int flags)
 {
@@ -211,7 +211,7 @@ CMS_ContentInfo *CMS_EncryptedData_encrypt(BIO *in, const EVP_CIPHER *cipher,
     if (cms == NULL)
         return NULL;
     if (!CMS_EncryptedData_set1_key(cms, cipher, key, keylen))
-        goto err;
+        return NULL;
 
     if (!(flags & CMS_DETACHED))
         CMS_set_detached(cms, 0);
@@ -220,7 +220,6 @@ CMS_ContentInfo *CMS_EncryptedData_encrypt(BIO *in, const EVP_CIPHER *cipher,
         || CMS_final(cms, in, NULL, flags))
         return cms;
 
- err:
     CMS_ContentInfo_free(cms);
     return NULL;
 }
@@ -342,7 +341,7 @@ int CMS_verify(CMS_ContentInfo *cms, STACK_OF(X509) *certs,
         char *ptr;
         long len;
         len = BIO_get_mem_data(dcont, &ptr);
-        tmpin = (len == 0) ? dcont : BIO_new_mem_buf(ptr, len);
+        tmpin = BIO_new_mem_buf(ptr, len);
         if (tmpin == NULL) {
             CMSerr(CMS_F_CMS_VERIFY, ERR_R_MALLOC_FAILURE);
             goto err2;

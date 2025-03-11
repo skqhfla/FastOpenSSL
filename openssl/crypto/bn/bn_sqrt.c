@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2000-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,14 +8,13 @@
  */
 
 #include "internal/cryptlib.h"
-#include "bn_local.h"
+#include "bn_lcl.h"
 
 BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
 /*
  * Returns 'ret' such that ret^2 == a (mod p), using the Tonelli/Shanks
  * algorithm (cf. Henri Cohen, "A Course in Algebraic Computational Number
- * Theory", algorithm 1.5.1). 'p' must be prime, otherwise an error or
- * an incorrect "result" will be returned.
+ * Theory", algorithm 1.5.1). 'p' must be prime!
  */
 {
     BIGNUM *ret = in;
@@ -40,7 +39,7 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
         }
 
         BNerr(BN_F_BN_MOD_SQRT, BN_R_P_IS_NOT_PRIME);
-        return NULL;
+        return (NULL);
     }
 
     if (BN_is_zero(a) || BN_is_one(a)) {
@@ -126,8 +125,7 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
          *         = a.
          *
          * (This is due to A.O.L. Atkin,
-         * Subject: Square Roots and Cognate Matters modulo p=8n+5.
-         * URL: https://listserv.nodak.edu/cgi-bin/wa.exe?A2=ind9211&L=NMBRTHRY&P=4026
+         * <URL: http://listserv.nodak.edu/scripts/wa.exe?A2=ind9211&L=nmbrthry&O=T&P=562>,
          * November 1992.)
          */
 
@@ -181,7 +179,7 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
             if (!BN_set_word(y, i))
                 goto end;
         } else {
-            if (!BN_priv_rand(y, BN_num_bits(p), 0, 0))
+            if (!BN_pseudo_rand(y, BN_num_bits(p), 0, 0))
                 goto end;
             if (BN_ucmp(y, p) >= 0) {
                 if (!(p->neg ? BN_add : BN_sub) (y, y, p))
@@ -302,23 +300,18 @@ BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
             goto vrfy;
         }
 
-        /* Find the smallest i, 0 < i < e, such that b^(2^i) = 1. */
-        for (i = 1; i < e; i++) {
-            if (i == 1) {
-                if (!BN_mod_sqr(t, b, p, ctx))
-                    goto end;
-
-            } else {
-                if (!BN_mod_mul(t, t, t, p, ctx))
-                    goto end;
-            }
-            if (BN_is_one(t))
-                break;
-        }
-        /* If not found, a is not a square or p is not prime. */
-        if (i >= e) {
-            BNerr(BN_F_BN_MOD_SQRT, BN_R_NOT_A_SQUARE);
+        /* find smallest  i  such that  b^(2^i) = 1 */
+        i = 1;
+        if (!BN_mod_sqr(t, b, p, ctx))
             goto end;
+        while (!BN_is_one(t)) {
+            i++;
+            if (i == e) {
+                BNerr(BN_F_BN_MOD_SQRT, BN_R_NOT_A_SQUARE);
+                goto end;
+            }
+            if (!BN_mod_mul(t, t, t, p, ctx))
+                goto end;
         }
 
         /* t := y^2^(e - i - 1) */

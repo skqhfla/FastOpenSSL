@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -34,6 +34,7 @@
 # define ASYNC_WIN
 #endif
 
+#define DASYNC_LIB_NAME "DASYNC"
 #include "e_dasync_err.c"
 
 /* Engine Id and Name */
@@ -138,6 +139,7 @@ struct dasync_pipeline_ctx {
     unsigned char **inbufs;
     unsigned char **outbufs;
     size_t *lens;
+    int enc;
     unsigned char tlsaad[SSL_MAX_PIPELINES][EVP_AEAD_TLS1_AAD_LEN];
     unsigned int aadctr;
 };
@@ -155,14 +157,6 @@ static const EVP_CIPHER *dasync_aes_128_cbc(void)
 /*
  * Holds the EVP_CIPHER object for aes_128_cbc_hmac_sha1 in this engine. Set up
  * once only during engine bind and can then be reused many times.
- *
- * This 'stitched' cipher depends on the EVP_aes_128_cbc_hmac_sha1() cipher,
- * which is implemented only if the AES-NI instruction set extension is available
- * (see OPENSSL_IA32CAP(3)). If that's not the case, then this cipher will not
- * be available either.
- *
- * Note: Since it is a legacy mac-then-encrypt cipher, modern TLS peers (which
- * negotiate the encrypt-then-mac extension) won't negotiate it anyway.
  */
 static EVP_CIPHER *_hidden_aes_128_cbc_hmac_sha1 = NULL;
 static const EVP_CIPHER *dasync_aes_128_cbc_hmac_sha1(void)
@@ -182,8 +176,8 @@ static int dasync_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
                                    const int **nids, int nid);
 
 static int dasync_cipher_nids[] = {
-    NID_aes_128_cbc_hmac_sha1,
     NID_aes_128_cbc,
+    NID_aes_128_cbc_hmac_sha1,
     0
 };
 
@@ -244,8 +238,7 @@ static int bind_dasync(ENGINE *e)
             || !EVP_CIPHER_meth_set_flags(_hidden_aes_128_cbc,
                                           EVP_CIPH_FLAG_DEFAULT_ASN1
                                           | EVP_CIPH_CBC_MODE
-                                          | EVP_CIPH_FLAG_PIPELINE
-                                          | EVP_CIPH_CUSTOM_COPY)
+                                          | EVP_CIPH_FLAG_PIPELINE)
             || !EVP_CIPHER_meth_set_init(_hidden_aes_128_cbc,
                                          dasync_aes128_init_key)
             || !EVP_CIPHER_meth_set_do_cipher(_hidden_aes_128_cbc,
@@ -265,14 +258,12 @@ static int bind_dasync(ENGINE *e)
                                                 16 /* block size */,
                                                 16 /* key len */);
     if (_hidden_aes_128_cbc_hmac_sha1 == NULL
-            || EVP_aes_128_cbc_hmac_sha1() == NULL
             || !EVP_CIPHER_meth_set_iv_length(_hidden_aes_128_cbc_hmac_sha1,16)
             || !EVP_CIPHER_meth_set_flags(_hidden_aes_128_cbc_hmac_sha1,
                                             EVP_CIPH_CBC_MODE
                                           | EVP_CIPH_FLAG_DEFAULT_ASN1
                                           | EVP_CIPH_FLAG_AEAD_CIPHER
-                                          | EVP_CIPH_FLAG_PIPELINE
-                                          | EVP_CIPH_CUSTOM_COPY)
+                                          | EVP_CIPH_FLAG_PIPELINE)
             || !EVP_CIPHER_meth_set_init(_hidden_aes_128_cbc_hmac_sha1,
                                          dasync_aes128_cbc_hmac_sha1_init_key)
             || !EVP_CIPHER_meth_set_do_cipher(_hidden_aes_128_cbc_hmac_sha1,
@@ -374,10 +365,6 @@ static int dasync_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
     int ok = 1;
     if (cipher == NULL) {
         /* We are returning a list of supported nids */
-        if (dasync_aes_128_cbc_hmac_sha1() == NULL) {
-            *nids = dasync_cipher_nids + 1;
-            return 1;
-        }
         *nids = dasync_cipher_nids;
         return (sizeof(dasync_cipher_nids) -
                 1) / sizeof(dasync_cipher_nids[0]);
@@ -451,8 +438,8 @@ static void dummy_pause_job(void) {
 #endif
         *writefd = pipefds[1];
 
-        if (!ASYNC_WAIT_CTX_set_wait_fd(waitctx, engine_dasync_id, pipefds[0],
-                                        writefd, wait_cleanup)) {
+        if(!ASYNC_WAIT_CTX_set_wait_fd(waitctx, engine_dasync_id, pipefds[0],
+                                       writefd, wait_cleanup)) {
             wait_cleanup(waitctx, engine_dasync_id, pipefds[0], writefd);
             return;
         }
@@ -617,7 +604,7 @@ static int dasync_cipher_ctrl_helper(EVP_CIPHER_CTX *ctx, int type, int arg,
 
             len = p[arg - 2] << 8 | p[arg - 1];
 
-            if (EVP_CIPHER_CTX_encrypting(ctx)) {
+            if (pipe_ctx->enc) {
                 if ((p[arg - 4] << 8 | p[arg - 3]) >= TLS1_1_VERSION) {
                     if (len < AES_BLOCK_SIZE)
                         return 0;
@@ -629,21 +616,6 @@ static int dasync_cipher_ctrl_helper(EVP_CIPHER_CTX *ctx, int type, int arg,
             } else {
                 return SHA_DIGEST_LENGTH;
             }
-        }
-
-        case EVP_CTRL_COPY:
-        {
-            const EVP_CIPHER *cipher = aeadcapable
-                                       ? EVP_aes_128_cbc_hmac_sha1()
-                                       : EVP_aes_128_cbc();
-            size_t data_size = EVP_CIPHER_impl_ctx_size(cipher);
-            void *cipher_data = OPENSSL_malloc(data_size);
-
-            if (cipher_data == NULL)
-                return 0;
-            memcpy(cipher_data, pipe_ctx->inner_cipher_data, data_size);
-            pipe_ctx->inner_cipher_data = cipher_data;
-            return 1;
         }
 
         default:
@@ -781,10 +753,6 @@ static int dasync_aes128_cbc_hmac_sha1_init_key(EVP_CIPHER_CTX *ctx,
                                                 const unsigned char *iv,
                                                 int enc)
 {
-    /*
-     * We can safely assume that EVP_aes_128_cbc_hmac_sha1() != NULL,
-     * see comment before the definition of dasync_aes_128_cbc_hmac_sha1().
-     */
     return dasync_cipher_init_key_helper(ctx, key, iv, enc,
                                          EVP_aes_128_cbc_hmac_sha1());
 }
@@ -799,9 +767,5 @@ static int dasync_aes128_cbc_hmac_sha1_cipher(EVP_CIPHER_CTX *ctx,
 
 static int dasync_aes128_cbc_hmac_sha1_cleanup(EVP_CIPHER_CTX *ctx)
 {
-    /*
-     * We can safely assume that EVP_aes_128_cbc_hmac_sha1() != NULL,
-     * see comment before the definition of dasync_aes_128_cbc_hmac_sha1().
-     */
     return dasync_cipher_cleanup_helper(ctx, EVP_aes_128_cbc_hmac_sha1());
 }

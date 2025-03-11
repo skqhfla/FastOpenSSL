@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,9 +14,9 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 #include <openssl/cms.h>
-#include "cms_local.h"
-#include "crypto/asn1.h"
-#include "crypto/evp.h"
+#include "cms_lcl.h"
+#include "internal/asn1_int.h"
+#include "internal/evp_int.h"
 
 /* CMS SignedData Utilities */
 
@@ -107,27 +107,6 @@ static void cms_sd_set_version(CMS_SignedData *sd)
     if (sd->version < 1)
         sd->version = 1;
 
-}
-
-/*
- * RFC 5652 Section 11.1 Content Type
- * The content-type attribute within signed-data MUST
- *   1) be present if there are signed attributes
- *   2) match the content type in the signed-data,
- *   3) be a signed attribute.
- *   4) not have more than one copy of the attribute.
- *
- * Note that since the CMS_SignerInfo_sign() always adds the "signing time"
- * attribute, the content type attribute MUST be added also.
- * Assumptions: This assumes that the attribute does not already exist.
- */
-static int cms_set_si_contentType_attr(CMS_ContentInfo *cms, CMS_SignerInfo *si)
-{
-    ASN1_OBJECT *ctype = cms->d.signedData->encapContentInfo->eContentType;
-
-    /* Add the contentType attribute */
-    return CMS_signed_add1_attr_by_NID(si, NID_pkcs9_contentType,
-                                       V_ASN1_OBJECT, ctype, -1) > 0;
 }
 
 /* Copy an existing messageDigest value */
@@ -349,8 +328,6 @@ CMS_SignerInfo *CMS_add1_signer(CMS_ContentInfo *cms,
         if (flags & CMS_REUSE_DIGEST) {
             if (!cms_copy_messageDigest(cms, si))
                 goto err;
-            if (!cms_set_si_contentType_attr(cms, si))
-                goto err;
             if (!(flags & (CMS_PARTIAL | CMS_KEY_PARAM)) &&
                 !CMS_SignerInfo_sign(si))
                 goto err;
@@ -375,8 +352,6 @@ CMS_SignerInfo *CMS_add1_signer(CMS_ContentInfo *cms,
         } else if (EVP_DigestSignInit(si->mctx, &si->pctx, md, NULL, pk) <=
                    0)
             goto err;
-        else
-            EVP_MD_CTX_set_flags(si->mctx, EVP_MD_CTX_FLAG_KEEP_PKEY_CTX);
     }
 
     if (!sd->signerInfos)
@@ -583,6 +558,8 @@ static int cms_SignerInfo_content_sign(CMS_ContentInfo *cms,
      */
 
     if (CMS_signed_get_attr_count(si) >= 0) {
+        ASN1_OBJECT *ctype =
+            cms->d.signedData->encapContentInfo->eContentType;
         unsigned char md[EVP_MAX_MD_SIZE];
         unsigned int mdlen;
         if (!EVP_DigestFinal_ex(mctx, md, &mdlen))
@@ -591,9 +568,9 @@ static int cms_SignerInfo_content_sign(CMS_ContentInfo *cms,
                                          V_ASN1_OCTET_STRING, md, mdlen))
             goto err;
         /* Copy content type across */
-        if (!cms_set_si_contentType_attr(cms, si))
+        if (CMS_signed_add1_attr_by_NID(si, NID_pkcs9_contentType,
+                                        V_ASN1_OBJECT, ctype, -1) <= 0)
             goto err;
-
         if (!CMS_SignerInfo_sign(si))
             goto err;
     } else if (si->pctx) {
@@ -602,7 +579,6 @@ static int cms_SignerInfo_content_sign(CMS_ContentInfo *cms,
         unsigned char md[EVP_MAX_MD_SIZE];
         unsigned int mdlen;
         pctx = si->pctx;
-        si->pctx = NULL;
         if (!EVP_DigestFinal_ex(mctx, md, &mdlen))
             goto err;
         siglen = EVP_PKEY_size(si->pkey);
@@ -659,7 +635,7 @@ int cms_SignedData_final(CMS_ContentInfo *cms, BIO *chain)
 int CMS_SignerInfo_sign(CMS_SignerInfo *si)
 {
     EVP_MD_CTX *mctx = si->mctx;
-    EVP_PKEY_CTX *pctx = NULL;
+    EVP_PKEY_CTX *pctx;
     unsigned char *abuf = NULL;
     int alen;
     size_t siglen;
@@ -674,17 +650,12 @@ int CMS_SignerInfo_sign(CMS_SignerInfo *si)
             goto err;
     }
 
-    if (!CMS_si_check_attributes(si))
-        goto err;
-
     if (si->pctx)
         pctx = si->pctx;
     else {
         EVP_MD_CTX_reset(mctx);
         if (EVP_DigestSignInit(mctx, &pctx, md, NULL, si->pkey) <= 0)
             goto err;
-        EVP_MD_CTX_set_flags(mctx, EVP_MD_CTX_FLAG_KEEP_PKEY_CTX);
-        si->pctx = pctx;
     }
 
     if (EVP_PKEY_CTX_ctrl(pctx, -1, EVP_PKEY_OP_SIGN,
@@ -724,6 +695,7 @@ int CMS_SignerInfo_sign(CMS_SignerInfo *si)
     OPENSSL_free(abuf);
     EVP_MD_CTX_reset(mctx);
     return 0;
+
 }
 
 int CMS_SignerInfo_verify(CMS_SignerInfo *si)
@@ -738,9 +710,6 @@ int CMS_SignerInfo_verify(CMS_SignerInfo *si)
         return -1;
     }
 
-    if (!CMS_si_check_attributes(si))
-        return -1;
-
     md = EVP_get_digestbyobj(si->digestAlgorithm->algorithm);
     if (md == NULL)
         return -1;
@@ -749,13 +718,8 @@ int CMS_SignerInfo_verify(CMS_SignerInfo *si)
         return -1;
     }
     mctx = si->mctx;
-    if (si->pctx != NULL) {
-        EVP_PKEY_CTX_free(si->pctx);
-        si->pctx = NULL;
-    }
     if (EVP_DigestVerifyInit(mctx, &si->pctx, md, NULL, si->pkey) <= 0)
         goto err;
-    EVP_MD_CTX_set_flags(mctx, EVP_MD_CTX_FLAG_KEEP_PKEY_CTX);
 
     if (!cms_sd_asn1_ctrl(si, 1))
         goto err;
@@ -868,11 +832,8 @@ int CMS_SignerInfo_verify_content(CMS_SignerInfo *si, BIO *chain)
         if (EVP_PKEY_CTX_set_signature_md(pkctx, md) <= 0)
             goto err;
         si->pctx = pkctx;
-        if (!cms_sd_asn1_ctrl(si, 1)) {
-            si->pctx = NULL;
+        if (!cms_sd_asn1_ctrl(si, 1))
             goto err;
-        }
-        si->pctx = NULL;
         r = EVP_PKEY_verify(pkctx, si->signature->data,
                             si->signature->length, mval, mlen);
         if (r <= 0) {
@@ -909,10 +870,8 @@ int CMS_add_simple_smimecap(STACK_OF(X509_ALGOR) **algs,
     ASN1_INTEGER *key = NULL;
     if (keysize > 0) {
         key = ASN1_INTEGER_new();
-        if (key == NULL || !ASN1_INTEGER_set(key, keysize)) {
-            ASN1_INTEGER_free(key);
+        if (key == NULL || !ASN1_INTEGER_set(key, keysize))
             return 0;
-        }
     }
     alg = X509_ALGOR_new();
     if (alg == NULL) {

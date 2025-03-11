@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -10,136 +10,124 @@
 #include <stdio.h>
 #include <openssl/opensslconf.h>
 
+#ifndef OPENSSL_NO_AFALGENG
+# include <linux/version.h>
+# define K_MAJ   4
+# define K_MIN1  1
+# define K_MIN2  0
+# if LINUX_VERSION_CODE < KERNEL_VERSION(K_MAJ, K_MIN1, K_MIN2)
+/*
+ * If we get here then it looks like there is a mismatch between the linux
+ * headers and the actual kernel version, so we have tried to compile with
+ * afalg support, but then skipped it in e_afalg.c. As far as this test is
+ * concerned we behave as if we had been configured without support
+ */
+#  define OPENSSL_NO_AFALGENG
+# endif
+#endif
+
+#ifndef OPENSSL_NO_AFALGENG
 #include <string.h>
 #include <openssl/engine.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-#include "testutil.h"
 
 /* Use a buffer size which is not aligned to block size */
-#define BUFFER_SIZE     17
+#define BUFFER_SIZE     (8 * 1024) - 13
 
-#ifndef OPENSSL_NO_ENGINE
-static ENGINE *e;
-
-static int test_afalg_aes_cbc(int keysize_idx)
+static int test_afalg_aes_128_cbc(ENGINE *e)
 {
     EVP_CIPHER_CTX *ctx;
-    const EVP_CIPHER *cipher;
-    unsigned char key[] = "\x06\xa9\x21\x40\x36\xb8\xa1\x5b"
-                          "\x51\x2e\x03\xd5\x34\x12\x00\x06"
-                          "\x06\xa9\x21\x40\x36\xb8\xa1\x5b"
-                          "\x51\x2e\x03\xd5\x34\x12\x00\x06";
-    unsigned char iv[] = "\x3d\xaf\xba\x42\x9d\x9e\xb4\x30"
-                         "\xb4\x22\xda\x80\x2c\x9f\xac\x41";
-    /* input = "Single block msg\n"  17Bytes*/
-    unsigned char in[BUFFER_SIZE] = "\x53\x69\x6e\x67\x6c\x65\x20\x62"
-                                    "\x6c\x6f\x63\x6b\x20\x6d\x73\x67\x0a";
+    const EVP_CIPHER *cipher = EVP_aes_128_cbc();
+    unsigned char key[] = "\x5F\x4D\xCC\x3B\x5A\xA7\x65\xD6\
+                           \x1D\x83\x27\xDE\xB8\x82\xCF\x99";
+    unsigned char iv[] = "\x2B\x95\x99\x0A\x91\x51\x37\x4A\
+                          \xBD\x8F\xF8\xC5\xA7\xA0\xFE\x08";
+
+    unsigned char in[BUFFER_SIZE];
     unsigned char ebuf[BUFFER_SIZE + 32];
     unsigned char dbuf[BUFFER_SIZE + 32];
-    unsigned char encresult_128[] = "\xe3\x53\x77\x9c\x10\x79\xae\xb8"
-                                    "\x27\x08\x94\x2d\xbe\x77\x18\x1a\x2d";
-    unsigned char encresult_192[] = "\xf7\xe4\x26\xd1\xd5\x4f\x8f\x39"
-                                    "\xb1\x9e\xe0\xdf\x61\xb9\xc2\x55\xeb";
-    unsigned char encresult_256[] = "\xa0\x76\x85\xfd\xc1\x65\x71\x9d"
-                                    "\xc7\xe9\x13\x6e\xae\x55\x49\xb4\x13";
-    unsigned char *enc_result = NULL;
-
     int encl, encf, decl, decf;
-    int ret = 0;
+    unsigned int status = 0;
 
-    switch (keysize_idx) {
-        case 0:
-            cipher = EVP_aes_128_cbc();
-            enc_result = &encresult_128[0];
-            break;
-        case 1:
-            cipher = EVP_aes_192_cbc();
-            enc_result = &encresult_192[0];
-            break;
-        case 2:
-            cipher = EVP_aes_256_cbc();
-            enc_result = &encresult_256[0];
-            break;
-        default:
-            cipher = NULL;
+    ctx = EVP_CIPHER_CTX_new();
+    if (ctx == NULL) {
+        fprintf(stderr, "%s() failed to allocate ctx\n", __func__);
+        return 0;
     }
-    if (!TEST_ptr(ctx = EVP_CIPHER_CTX_new()))
-            return 0;
+    RAND_bytes(in, BUFFER_SIZE);
 
-    if (!TEST_true(EVP_CipherInit_ex(ctx, cipher, e, key, iv, 1))
-            || !TEST_true(EVP_CipherUpdate(ctx, ebuf, &encl, in, BUFFER_SIZE))
-            || !TEST_true(EVP_CipherFinal_ex(ctx, ebuf+encl, &encf)))
+    if (       !EVP_CipherInit_ex(ctx, cipher, e, key, iv, 1)
+            || !EVP_CipherUpdate(ctx, ebuf, &encl, in, BUFFER_SIZE)
+            || !EVP_CipherFinal_ex(ctx, ebuf+encl, &encf)) {
+        fprintf(stderr, "%s() failed encryption\n", __func__);
         goto end;
+    }
     encl += encf;
 
-    if (!TEST_mem_eq(enc_result, BUFFER_SIZE, ebuf, BUFFER_SIZE))
+    if (       !EVP_CIPHER_CTX_reset(ctx)
+            || !EVP_CipherInit_ex(ctx, cipher, e, key, iv, 0)
+            || !EVP_CipherUpdate(ctx, dbuf, &decl, ebuf, encl)
+            || !EVP_CipherFinal_ex(ctx, dbuf+decl, &decf)) {
+        fprintf(stderr, "%s() failed decryption\n", __func__);
         goto end;
-
-    if (!TEST_true(EVP_CIPHER_CTX_reset(ctx))
-            || !TEST_true(EVP_CipherInit_ex(ctx, cipher, e, key, iv, 0))
-            || !TEST_true(EVP_CipherUpdate(ctx, dbuf, &decl, ebuf, encl))
-            || !TEST_true(EVP_CipherFinal_ex(ctx, dbuf+decl, &decf)))
-        goto end;
+    }
     decl += decf;
 
-    if (!TEST_int_eq(decl, BUFFER_SIZE)
-            || !TEST_mem_eq(dbuf, BUFFER_SIZE, in, BUFFER_SIZE))
+    if (       decl != BUFFER_SIZE
+            || memcmp(dbuf, in, BUFFER_SIZE)) {
+        fprintf(stderr, "%s() failed Dec(Enc(P)) != P\n", __func__);
         goto end;
+    }
 
-    ret = 1;
+    status = 1;
 
  end:
     EVP_CIPHER_CTX_free(ctx);
-    return ret;
+    return status;
 }
 
-static int test_pr16743(void)
+int main(int argc, char **argv)
 {
-    int ret = 0;
-    const EVP_CIPHER * cipher;
-    EVP_CIPHER_CTX *ctx;
+    ENGINE *e;
 
-    if (!TEST_true(ENGINE_init(e)))
-        return 0;
-    cipher = ENGINE_get_cipher(e, NID_aes_128_cbc);
-    ctx = EVP_CIPHER_CTX_new();
-    if (cipher != NULL && ctx != NULL)
-        ret = EVP_EncryptInit_ex(ctx, cipher, e, NULL, NULL);
-    TEST_true(ret);
-    EVP_CIPHER_CTX_free(ctx);
-    ENGINE_finish(e);
-    return ret;
-}
+    CRYPTO_set_mem_debug(1);
+    CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
 
-int global_init(void)
-{
     ENGINE_load_builtin_engines();
+
 # ifndef OPENSSL_NO_STATIC_ENGINE
     OPENSSL_init_crypto(OPENSSL_INIT_ENGINE_AFALG, NULL);
 # endif
-    return 1;
-}
-#endif
 
-int setup_tests(void)
-{
-#ifndef OPENSSL_NO_ENGINE
-    if ((e = ENGINE_by_id("afalg")) == NULL) {
-        /* Probably a platform env issue, not a test failure. */
-        TEST_info("Can't load AFALG engine");
-    } else {
-        ADD_ALL_TESTS(test_afalg_aes_cbc, 3);
-        ADD_TEST(test_pr16743);
+    e = ENGINE_by_id("afalg");
+    if (e == NULL) {
+        /*
+         * A failure to load is probably a platform environment problem so we
+         * don't treat this as an OpenSSL test failure, i.e. we return 0
+         */
+        fprintf(stderr,
+                "AFALG Test: Failed to load AFALG Engine - skipping test\n");
+        return 0;
     }
-#endif
 
-    return 1;
-}
+    if (test_afalg_aes_128_cbc(e) == 0) {
+        ENGINE_free(e);
+        return 1;
+    }
 
-#ifndef OPENSSL_NO_ENGINE
-void cleanup_tests(void)
-{
     ENGINE_free(e);
+    printf("PASS\n");
+    return 0;
 }
+
+#else  /* OPENSSL_NO_AFALGENG */
+
+int main(int argc, char **argv)
+{
+    fprintf(stderr, "AFALG not supported - skipping AFALG tests\n");
+    printf("PASS\n");
+    return 0;
+}
+
 #endif

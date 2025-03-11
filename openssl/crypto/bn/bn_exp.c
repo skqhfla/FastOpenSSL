@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,8 +8,8 @@
  */
 
 #include "internal/cryptlib.h"
-#include "internal/constant_time.h"
-#include "bn_local.h"
+#include "internal/constant_time_locl.h"
+#include "bn_lcl.h"
 
 #include <stdlib.h>
 #ifdef _WIN32
@@ -37,15 +37,6 @@ extern unsigned int OPENSSL_sparcv9cap_P[];
 /* maximum precomputation table size for *variable* sliding windows */
 #define TABLE_SIZE      32
 
-/*
- * Beyond this limit the constant time code is disabled due to
- * the possible overflow in the computation of powerbufLen in
- * BN_mod_exp_mont_consttime.
- * When this limit is exceeded, the computation will be done using
- * non-constant time code, but it will take very long.
- */
-#define BN_CONSTTIME_SIZE_LIMIT (INT_MAX / BN_BYTES / 256)
-
 /* this one works - simple but works */
 int BN_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
 {
@@ -60,7 +51,10 @@ int BN_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
     }
 
     BN_CTX_start(ctx);
-    rr = ((r == a) || (r == p)) ? BN_CTX_get(ctx) : r;
+    if ((r == a) || (r == p))
+        rr = BN_CTX_get(ctx);
+    else
+        rr = r;
     v = BN_CTX_get(ctx);
     if (rr == NULL || v == NULL)
         goto err;
@@ -92,7 +86,7 @@ int BN_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx)
  err:
     BN_CTX_end(ctx);
     bn_check_top(r);
-    return ret;
+    return (ret);
 }
 
 int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
@@ -140,6 +134,13 @@ int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
 #define RECP_MUL_MOD
 
 #ifdef MONT_MUL_MOD
+    /*
+     * I have finally been able to take out this pre-condition of the top bit
+     * being set.  It was caused by an error in BN_div with negatives.  There
+     * was also another problem when for a^b%m a >= m.  eay 07-May-97
+     */
+    /* if ((m->d[m->top-1]&BN_TBIT) && BN_is_odd(m)) */
+
     if (BN_is_odd(m)) {
 # ifdef MONT_EXP_WORD
         if (a->top == 1 && !a->neg
@@ -164,7 +165,7 @@ int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
 #endif
 
     bn_check_top(r);
-    return ret;
+    return (ret);
 }
 
 int BN_mod_exp_recp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
@@ -197,14 +198,13 @@ int BN_mod_exp_recp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
         return ret;
     }
 
-    BN_RECP_CTX_init(&recp);
-
     BN_CTX_start(ctx);
     aa = BN_CTX_get(ctx);
     val[0] = BN_CTX_get(ctx);
-    if (val[0] == NULL)
+    if (!aa || !val[0])
         goto err;
 
+    BN_RECP_CTX_init(&recp);
     if (m->neg) {
         /* ignore sign of 'm' */
         if (!BN_copy(aa, m))
@@ -300,7 +300,7 @@ int BN_mod_exp_recp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
     BN_CTX_end(ctx);
     BN_RECP_CTX_free(&recp);
     bn_check_top(r);
-    return ret;
+    return (ret);
 }
 
 int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
@@ -314,22 +314,20 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     BIGNUM *val[TABLE_SIZE];
     BN_MONT_CTX *mont = NULL;
 
+    if (BN_get_flags(p, BN_FLG_CONSTTIME) != 0
+            || BN_get_flags(a, BN_FLG_CONSTTIME) != 0
+            || BN_get_flags(m, BN_FLG_CONSTTIME) != 0) {
+        return BN_mod_exp_mont_consttime(rr, a, p, m, ctx, in_mont);
+    }
+
     bn_check_top(a);
     bn_check_top(p);
     bn_check_top(m);
 
     if (!BN_is_odd(m)) {
         BNerr(BN_F_BN_MOD_EXP_MONT, BN_R_CALLED_WITH_EVEN_MODULUS);
-        return 0;
+        return (0);
     }
-
-    if (m->top <= BN_CONSTTIME_SIZE_LIMIT
-        && (BN_get_flags(p, BN_FLG_CONSTTIME) != 0
-            || BN_get_flags(a, BN_FLG_CONSTTIME) != 0
-            || BN_get_flags(m, BN_FLG_CONSTTIME) != 0)) {
-        return BN_mod_exp_mont_consttime(rr, a, p, m, ctx, in_mont);
-    }
-
     bits = BN_num_bits(p);
     if (bits == 0) {
         /* x**0 mod 1, or x**0 mod -1 is still zero. */
@@ -346,7 +344,7 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     d = BN_CTX_get(ctx);
     r = BN_CTX_get(ctx);
     val[0] = BN_CTX_get(ctx);
-    if (val[0] == NULL)
+    if (!d || !r || !val[0])
         goto err;
 
     /*
@@ -368,6 +366,11 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
         aa = val[0];
     } else
         aa = a;
+    if (BN_is_zero(aa)) {
+        BN_zero(rr);
+        ret = 1;
+        goto err;
+    }
     if (!bn_to_mont_fixed_top(val[0], aa, mont, ctx))
         goto err;               /* 1 */
 
@@ -478,9 +481,10 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
         BN_MONT_CTX_free(mont);
     BN_CTX_end(ctx);
     bn_check_top(rr);
-    return ret;
+    return (ret);
 }
 
+#if defined(SPARC_T4_MONT)
 static BN_ULONG bn_get_bits(const BIGNUM *a, int bitpos)
 {
     BN_ULONG ret = 0;
@@ -499,6 +503,7 @@ static BN_ULONG bn_get_bits(const BIGNUM *a, int bitpos)
 
     return ret & BN_MASK2;
 }
+#endif
 
 /*
  * BN_mod_exp_mont_consttime() stores the precomputed powers in a specific
@@ -605,7 +610,7 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
                               const BIGNUM *m, BN_CTX *ctx,
                               BN_MONT_CTX *in_mont)
 {
-    int i, bits, ret = 0, window, wvalue, wmask, window0;
+    int i, bits, ret = 0, window, wvalue;
     int top;
     BN_MONT_CTX *mont = NULL;
 
@@ -624,15 +629,10 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 
     if (!BN_is_odd(m)) {
         BNerr(BN_F_BN_MOD_EXP_MONT_CONSTTIME, BN_R_CALLED_WITH_EVEN_MODULUS);
-        return 0;
+        return (0);
     }
 
     top = m->top;
-
-    if (top > BN_CONSTTIME_SIZE_LIMIT) {
-        /* Prevent overflowing the powerbufLen computation below */
-        return BN_mod_exp_mont(rr, a, p, m, ctx, in_mont);
-    }
 
     /*
      * Use all bits stored in |p|, rather than |BN_num_bits|, so we do not leak
@@ -663,15 +663,6 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
             goto err;
         if (!BN_MONT_CTX_set(mont, m, ctx))
             goto err;
-    }
-
-    if (a->neg || BN_ucmp(a, m) >= 0) {
-        BIGNUM *reduced = BN_CTX_get(ctx);
-        if (reduced == NULL
-            || !BN_nnmod(reduced, a, m, ctx)) {
-            goto err;
-        }
-        a = reduced;
     }
 
 #ifdef RSAZ_ENABLED
@@ -713,7 +704,7 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     else
 #endif
 #if defined(OPENSSL_BN_ASM_MONT5)
-    if (window >= 5 && top <= BN_SOFT_LIMIT) {
+    if (window >= 5) {
         window = 5;             /* ~5% improvement for RSA2048 sign, and even
                                  * for RSA4096 */
         /* reserve space for mont->N.d[] copy */
@@ -771,11 +762,13 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
         goto err;
 
     /* prepare a^1 in Montgomery domain */
-    if (!bn_to_mont_fixed_top(&am, a, mont, ctx))
+    if (a->neg || BN_ucmp(a, m) >= 0) {
+        if (!BN_mod(&am, a, m, ctx))
+            goto err;
+        if (!bn_to_mont_fixed_top(&am, &am, mont, ctx))
+            goto err;
+    } else if (!bn_to_mont_fixed_top(&am, a, mont, ctx))
         goto err;
-
-    if (top > BN_SOFT_LIMIT)
-        goto fallback;
 
 #if defined(SPARC_T4_MONT)
     if (t4) {
@@ -868,27 +861,20 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
         top /= 2;
         bn_flip_t4(np, mont->N.d, top);
 
-        /*
-         * The exponent may not have a whole number of fixed-size windows.
-         * To simplify the main loop, the initial window has between 1 and
-         * full-window-size bits such that what remains is always a whole
-         * number of windows
-         */
-        window0 = (bits - 1) % 5 + 1;
-        wmask = (1 << window0) - 1;
-        bits -= window0;
-        wvalue = bn_get_bits(p, bits) & wmask;
+        bits--;
+        for (wvalue = 0, i = bits % 5; i >= 0; i--, bits--)
+            wvalue = (wvalue << 1) + BN_is_bit_set(p, bits);
         bn_gather5_t4(tmp.d, top, powerbuf, wvalue);
 
         /*
          * Scan the exponent one window at a time starting from the most
          * significant bits.
          */
-        while (bits > 0) {
+        while (bits >= 0) {
             if (bits < stride)
-                stride = bits;
+                stride = bits + 1;
             bits -= stride;
-            wvalue = bn_get_bits(p, bits);
+            wvalue = bn_get_bits(p, bits + 1);
 
             if ((*pwr5_worker) (tmp.d, np, n0, powerbuf, wvalue, stride))
                 continue;
@@ -919,21 +905,14 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 #if defined(OPENSSL_BN_ASM_MONT5)
     if (window == 5 && top > 1) {
         /*
-         * This optimization uses ideas from https://eprint.iacr.org/2011/239,
-         * specifically optimization of cache-timing attack countermeasures,
-         * pre-computation optimization, and Almost Montgomery Multiplication.
-         *
-         * The paper discusses a 4-bit window to optimize 512-bit modular
-         * exponentiation, used in RSA-1024 with CRT, but RSA-1024 is no longer
-         * important.
-         *
-         * |bn_mul_mont_gather5| and |bn_power5| implement the "almost"
-         * reduction variant, so the values here may not be fully reduced.
-         * They are bounded by R (i.e. they fit in |top| words), not |m|.
-         * Additionally, we pass these "almost" reduced inputs into
-         * |bn_mul_mont|, which implements the normal reduction variant.
-         * Given those inputs, |bn_mul_mont| may not give reduced
-         * output, but it will still produce "almost" reduced output.
+         * This optimization uses ideas from http://eprint.iacr.org/2011/239,
+         * specifically optimization of cache-timing attack countermeasures
+         * and pre-computation optimization.
+         */
+
+        /*
+         * Dedicated window==4 case improves 512-bit RSA sign by ~15%, but as
+         * 512-bit RSA is hardly relevant, we omit it to spare size...
          */
         void bn_mul_mont_gather5(BN_ULONG *rp, const BN_ULONG *ap,
                                  const void *table, const BN_ULONG *np,
@@ -945,6 +924,9 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
                        const void *table, const BN_ULONG *np,
                        const BN_ULONG *n0, int num, int power);
         int bn_get_bits5(const BN_ULONG *ap, int off);
+        int bn_from_montgomery(BN_ULONG *rp, const BN_ULONG *ap,
+                               const BN_ULONG *not_used, const BN_ULONG *np,
+                               const BN_ULONG *n0, int num);
 
         BN_ULONG *n0 = mont->n0, *np;
 
@@ -1000,55 +982,46 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
             bn_scatter5(tmp.d, top, powerbuf, i);
         }
 # endif
-        /*
-         * The exponent may not have a whole number of fixed-size windows.
-         * To simplify the main loop, the initial window has between 1 and
-         * full-window-size bits such that what remains is always a whole
-         * number of windows
-         */
-        window0 = (bits - 1) % 5 + 1;
-        wmask = (1 << window0) - 1;
-        bits -= window0;
-        wvalue = bn_get_bits(p, bits) & wmask;
+        bits--;
+        for (wvalue = 0, i = bits % 5; i >= 0; i--, bits--)
+            wvalue = (wvalue << 1) + BN_is_bit_set(p, bits);
         bn_gather5(tmp.d, top, powerbuf, wvalue);
 
         /*
          * Scan the exponent one window at a time starting from the most
          * significant bits.
          */
-        if (top & 7) {
-            while (bits > 0) {
+        if (top & 7)
+            while (bits >= 0) {
+                for (wvalue = 0, i = 0; i < 5; i++, bits--)
+                    wvalue = (wvalue << 1) + BN_is_bit_set(p, bits);
+
                 bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
                 bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
                 bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
                 bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
                 bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
                 bn_mul_mont_gather5(tmp.d, tmp.d, powerbuf, np, n0, top,
-                                    bn_get_bits5(p->d, bits -= 5));
-            }
+                                    wvalue);
         } else {
-            while (bits > 0) {
-                bn_power5(tmp.d, tmp.d, powerbuf, np, n0, top,
-                          bn_get_bits5(p->d, bits -= 5));
+            while (bits >= 0) {
+                wvalue = bn_get_bits5(p->d, bits - 4);
+                bits -= 5;
+                bn_power5(tmp.d, tmp.d, powerbuf, np, n0, top, wvalue);
             }
         }
 
+        ret = bn_from_montgomery(tmp.d, tmp.d, NULL, np, n0, top);
         tmp.top = top;
-        /*
-         * The result is now in |tmp| in Montgomery form, but it may not be
-         * fully reduced. This is within bounds for |BN_from_montgomery|
-         * (tmp < R <= m*R) so it will, when converting from Montgomery form,
-         * produce a fully reduced result.
-         *
-         * This differs from Figure 2 of the paper, which uses AMM(h, 1) to
-         * convert from Montgomery form with unreduced output, followed by an
-         * extra reduction step. In the paper's terminology, we replace
-         * steps 9 and 10 with MM(h, 1).
-         */
+        bn_correct_top(&tmp);
+        if (ret) {
+            if (!BN_copy(rr, &tmp))
+                ret = 0;
+            goto err;           /* non-zero ret means it's not error */
+        }
     } else
 #endif
     {
- fallback:
         if (!MOD_EXP_CTIME_COPY_TO_PREBUF(&tmp, top, powerbuf, 0, window))
             goto err;
         if (!MOD_EXP_CTIME_COPY_TO_PREBUF(&am, top, powerbuf, 1, window))
@@ -1076,44 +1049,27 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
             }
         }
 
-        /*
-         * The exponent may not have a whole number of fixed-size windows.
-         * To simplify the main loop, the initial window has between 1 and
-         * full-window-size bits such that what remains is always a whole
-         * number of windows
-         */
-        window0 = (bits - 1) % window + 1;
-        wmask = (1 << window0) - 1;
-        bits -= window0;
-        wvalue = bn_get_bits(p, bits) & wmask;
+        bits--;
+        for (wvalue = 0, i = bits % window; i >= 0; i--, bits--)
+            wvalue = (wvalue << 1) + BN_is_bit_set(p, bits);
         if (!MOD_EXP_CTIME_COPY_FROM_PREBUF(&tmp, top, powerbuf, wvalue,
                                             window))
             goto err;
 
-        wmask = (1 << window) - 1;
         /*
          * Scan the exponent one window at a time starting from the most
          * significant bits.
          */
-        while (bits > 0) {
+        while (bits >= 0) {
+            wvalue = 0;         /* The 'value' of the window */
 
-            /* Square the result window-size times */
-            for (i = 0; i < window; i++)
+            /* Scan the window, squaring the result as we go */
+            for (i = 0; i < window; i++, bits--) {
                 if (!bn_mul_mont_fixed_top(&tmp, &tmp, &tmp, mont, ctx))
                     goto err;
+                wvalue = (wvalue << 1) + BN_is_bit_set(p, bits);
+            }
 
-            /*
-             * Get a window's worth of bits from the exponent
-             * This avoids calling BN_is_bit_set for each bit, which
-             * is not only slower but also makes each bit vulnerable to
-             * EM (and likely other) side-channel attacks like One&Done
-             * (for details see "One&Done: A Single-Decryption EM-Based
-             *  Attack on OpenSSL's Constant-Time Blinded RSA" by M. Alam,
-             *  H. Khan, M. Dey, N. Sinha, R. Callan, A. Zajic, and
-             *  M. Prvulovic, in USENIX Security'18)
-             */
-            bits -= window;
-            wvalue = bn_get_bits(p, bits) & wmask;
             /*
              * Fetch the appropriate pre-computed value from the pre-buf
              */
@@ -1152,7 +1108,7 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
         OPENSSL_free(powerbufFree);
     }
     BN_CTX_end(ctx);
-    return ret;
+    return (ret);
 }
 
 int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
@@ -1162,7 +1118,7 @@ int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
     int b, bits, ret = 0;
     int r_is_one;
     BN_ULONG w, next_w;
-    BIGNUM *r, *t;
+    BIGNUM *d, *r, *t;
     BIGNUM *swap_tmp;
 #define BN_MOD_MUL_WORD(r, w, m) \
                 (BN_mul_word(r, (w)) && \
@@ -1193,7 +1149,7 @@ int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
 
     if (!BN_is_odd(m)) {
         BNerr(BN_F_BN_MOD_EXP_MONT_WORD, BN_R_CALLED_WITH_EVEN_MODULUS);
-        return 0;
+        return (0);
     }
     if (m->top == 1)
         a %= m->d[0];           /* make sure that 'a' is reduced */
@@ -1216,9 +1172,10 @@ int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
     }
 
     BN_CTX_start(ctx);
+    d = BN_CTX_get(ctx);
     r = BN_CTX_get(ctx);
     t = BN_CTX_get(ctx);
-    if (t == NULL)
+    if (d == NULL || r == NULL || t == NULL)
         goto err;
 
     if (in_mont != NULL)
@@ -1299,7 +1256,7 @@ int BN_mod_exp_mont_word(BIGNUM *rr, BN_ULONG a, const BIGNUM *p,
         BN_MONT_CTX_free(mont);
     BN_CTX_end(ctx);
     bn_check_top(rr);
-    return ret;
+    return (ret);
 }
 
 /* The old fallback, simple version :-) */
@@ -1335,7 +1292,7 @@ int BN_mod_exp_simple(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
     BN_CTX_start(ctx);
     d = BN_CTX_get(ctx);
     val[0] = BN_CTX_get(ctx);
-    if (val[0] == NULL)
+    if (!d || !val[0])
         goto err;
 
     if (!BN_nnmod(val[0], a, m, ctx))
@@ -1420,5 +1377,5 @@ int BN_mod_exp_simple(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
  err:
     BN_CTX_end(ctx);
     bn_check_top(r);
-    return ret;
+    return (ret);
 }

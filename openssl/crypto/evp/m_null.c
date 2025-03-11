@@ -12,7 +12,7 @@
 #include <openssl/evp.h>
 #include <openssl/objects.h>
 #include <openssl/x509.h>
-#include "crypto/evp.h"
+#include "internal/evp_int.h"
 
 static int init(EVP_MD_CTX *ctx)
 {
@@ -45,5 +45,5 @@ static const EVP_MD null_md = {
 
 const EVP_MD *EVP_md_null(void)
 {
-    return &null_md;
+    return (&null_md);
 }

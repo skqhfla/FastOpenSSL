@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -13,8 +13,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
-#include <string.h>
 
 #include "internal/cryptlib.h"
 #include <openssl/conf.h>
@@ -22,7 +20,7 @@
 #include <openssl/asn1t.h>
 #include <openssl/buffer.h>
 #include <openssl/x509v3.h>
-#include "crypto/x509.h"
+#include "internal/x509_int.h"
 #include "ext_dat.h"
 
 #ifndef OPENSSL_NO_RFC3779
@@ -344,13 +342,7 @@ static int range_should_be_prefix(const unsigned char *min,
     unsigned char mask;
     int i, j;
 
-    /*
-     * It is the responsibility of the caller to confirm min <= max. We don't
-     * use ossl_assert() here since we have no way of signalling an error from
-     * this function - so we just use a plain assert instead.
-     */
-    assert(memcmp(min, max, length) <= 0);
-
+    OPENSSL_assert(memcmp(min, max, length) <= 0);
     for (i = 0; i < length && min[i] == max[i]; i++) ;
     for (j = length - 1; j >= 0 && min[j] == 0x00 && max[j] == 0xFF; j--) ;
     if (i < j)
@@ -392,14 +384,12 @@ static int range_should_be_prefix(const unsigned char *min,
 /*
  * Construct a prefix.
  */
-static int make_addressPrefix(IPAddressOrRange **result, unsigned char *addr,
-                              const int prefixlen, const int afilen)
+static int make_addressPrefix(IPAddressOrRange **result,
+                              unsigned char *addr, const int prefixlen)
 {
     int bytelen = (prefixlen + 7) / 8, bitlen = prefixlen % 8;
     IPAddressOrRange *aor = IPAddressOrRange_new();
 
-    if (prefixlen < 0 || prefixlen > (afilen * 8))
-        return 0;
     if (aor == NULL)
         return 0;
     aor->type = IPAddressOrRange_addressPrefix;
@@ -435,15 +425,13 @@ static int make_addressRange(IPAddressOrRange **result,
     IPAddressOrRange *aor;
     int i, prefixlen;
 
-    if (memcmp(min, max, length) > 0)
-        return 0;
-
     if ((prefixlen = range_should_be_prefix(min, max, length)) >= 0)
-        return make_addressPrefix(result, min, prefixlen, length);
+        return make_addressPrefix(result, min, prefixlen);
 
     if ((aor = IPAddressOrRange_new()) == NULL)
         return 0;
     aor->type = IPAddressOrRange_addressRange;
+    OPENSSL_assert(aor->u.addressRange == NULL);
     if ((aor->u.addressRange = IPAddressRange_new()) == NULL)
         goto err;
     if (aor->u.addressRange->min == NULL &&
@@ -510,6 +498,7 @@ static IPAddressFamily *make_IPAddressFamily(IPAddrBlocks *addr,
 
     for (i = 0; i < sk_IPAddressFamily_num(addr); i++) {
         f = sk_IPAddressFamily_value(addr, i);
+        OPENSSL_assert(f->addressFamily->data != NULL);
         if (f->addressFamily->length == keylen &&
             !memcmp(f->addressFamily->data, key, keylen))
             return f;
@@ -601,9 +590,7 @@ int X509v3_addr_add_prefix(IPAddrBlocks *addr,
 {
     IPAddressOrRanges *aors = make_prefix_or_range(addr, afi, safi);
     IPAddressOrRange *aor;
-
-    if (aors == NULL
-            || !make_addressPrefix(&aor, a, prefixlen, length_from_afi(afi)))
+    if (aors == NULL || !make_addressPrefix(&aor, a, prefixlen))
         return 0;
     if (sk_IPAddressOrRange_push(aors, aor))
         return 1;
@@ -890,8 +877,7 @@ int X509v3_addr_canonize(IPAddrBlocks *addr)
     }
     (void)sk_IPAddressFamily_set_cmp_func(addr, IPAddressFamily_cmp);
     sk_IPAddressFamily_sort(addr);
-    if (!ossl_assert(X509v3_addr_is_canonical(addr)))
-        return 0;
+    OPENSSL_assert(X509v3_addr_is_canonical(addr));
     return 1;
 }
 
@@ -1000,10 +986,7 @@ static void *v2i_IPAddrBlocks(const struct v3_ext_method *method,
         switch (delim) {
         case '/':
             prefixlen = (int)strtoul(s + i2, &t, 10);
-            if (t == s + i2
-                    || *t != '\0'
-                    || prefixlen > (length * 8)
-                    || prefixlen < 0) {
+            if (t == s + i2 || *t != '\0') {
                 X509V3err(X509V3_F_V2I_IPADDRBLOCKS,
                           X509V3_R_EXTENSION_VALUE_ERROR);
                 X509V3_conf_err(val);
@@ -1199,13 +1182,9 @@ static int addr_validate_path_internal(X509_STORE_CTX *ctx,
     int i, j, ret = 1;
     X509 *x;
 
-    if (!ossl_assert(chain != NULL && sk_X509_num(chain) > 0)
-            || !ossl_assert(ctx != NULL || ext != NULL)
-            || !ossl_assert(ctx == NULL || ctx->verify_cb != NULL)) {
-        if (ctx != NULL)
-            ctx->error = X509_V_ERR_UNSPECIFIED;
-        return 0;
-    }
+    OPENSSL_assert(chain != NULL && sk_X509_num(chain) > 0);
+    OPENSSL_assert(ctx != NULL || ext != NULL);
+    OPENSSL_assert(ctx == NULL || ctx->verify_cb != NULL);
 
     /*
      * Figure out where to start.  If we don't have an extension to
@@ -1218,6 +1197,7 @@ static int addr_validate_path_internal(X509_STORE_CTX *ctx,
     } else {
         i = 0;
         x = sk_X509_value(chain, i);
+        OPENSSL_assert(x != NULL);
         if ((ext = x->rfc3779_addr) == NULL)
             goto done;
     }
@@ -1227,8 +1207,7 @@ static int addr_validate_path_internal(X509_STORE_CTX *ctx,
     if ((child = sk_IPAddressFamily_dup(ext)) == NULL) {
         X509V3err(X509V3_F_ADDR_VALIDATE_PATH_INTERNAL,
                   ERR_R_MALLOC_FAILURE);
-        if (ctx != NULL)
-            ctx->error = X509_V_ERR_OUT_OF_MEM;
+        ctx->error = X509_V_ERR_OUT_OF_MEM;
         ret = 0;
         goto done;
     }
@@ -1239,6 +1218,7 @@ static int addr_validate_path_internal(X509_STORE_CTX *ctx,
      */
     for (i++; i < sk_X509_num(chain); i++) {
         x = sk_X509_value(chain, i);
+        OPENSSL_assert(x != NULL);
         if (!X509v3_addr_is_canonical(x->rfc3779_addr))
             validation_err(X509_V_ERR_INVALID_EXTENSION);
         if (x->rfc3779_addr == NULL) {
@@ -1282,6 +1262,7 @@ static int addr_validate_path_internal(X509_STORE_CTX *ctx,
     /*
      * Trust anchor can't inherit.
      */
+    OPENSSL_assert(x != NULL);
     if (x->rfc3779_addr != NULL) {
         for (j = 0; j < sk_IPAddressFamily_num(x->rfc3779_addr); j++) {
             IPAddressFamily *fp =
@@ -1304,12 +1285,6 @@ static int addr_validate_path_internal(X509_STORE_CTX *ctx,
  */
 int X509v3_addr_validate_path(X509_STORE_CTX *ctx)
 {
-    if (ctx->chain == NULL
-            || sk_X509_num(ctx->chain) == 0
-            || ctx->verify_cb == NULL) {
-        ctx->error = X509_V_ERR_UNSPECIFIED;
-        return 0;
-    }
     return addr_validate_path_internal(ctx, ctx->chain, NULL);
 }
 

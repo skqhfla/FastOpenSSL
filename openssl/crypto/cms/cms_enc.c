@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,7 +14,7 @@
 #include <openssl/err.h>
 #include <openssl/cms.h>
 #include <openssl/rand.h>
-#include "cms_local.h"
+#include "cms_lcl.h"
 
 /* CMS EncryptedData Utilities */
 
@@ -68,12 +68,7 @@ BIO *cms_EncryptedContent_init_bio(CMS_EncryptedContentInfo *ec)
 
     if (enc) {
         int ivlen;
-
         calg->algorithm = OBJ_nid2obj(EVP_CIPHER_CTX_type(ctx));
-        if (calg->algorithm == NULL) {
-            CMSerr(ERR_LIB_CMS, CMS_R_UNSUPPORTED_CONTENT_ENCRYPTION_ALGORITHM);
-            goto err;
-        }
         /* Generate a random IV if we need one */
         ivlen = EVP_CIPHER_CTX_iv_length(ctx);
         if (ivlen > 0) {
@@ -173,10 +168,9 @@ int cms_EncryptedContent_init(CMS_EncryptedContentInfo *ec,
 {
     ec->cipher = cipher;
     if (key) {
-        if ((ec->key = OPENSSL_malloc(keylen)) == NULL) {
-            CMSerr(CMS_F_CMS_ENCRYPTEDCONTENT_INIT, ERR_R_MALLOC_FAILURE);
+        ec->key = OPENSSL_malloc(keylen);
+        if (ec->key == NULL)
             return 0;
-        }
         memcpy(ec->key, key, keylen);
     }
     ec->keylen = keylen;

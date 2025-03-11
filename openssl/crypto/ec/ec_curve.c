@@ -1,6 +1,5 @@
 /*
- * Copyright 2002-2021 The OpenSSL Project Authors. All Rights Reserved.
- * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
+ * Copyright 2002-2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,13 +7,26 @@
  * https://www.openssl.org/source/license.html
  */
 
+/* ====================================================================
+ * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
+ *
+ * Portions of the attached software ("Contribution") are developed by
+ * SUN MICROSYSTEMS, INC., and are contributed to the OpenSSL project.
+ *
+ * The Contribution is licensed pursuant to the OpenSSL open source
+ * license provided above.
+ *
+ * The elliptic curve binary polynomial software is originally written by
+ * Sheueling Chang Shantz and Douglas Stebila of Sun Microsystems Laboratories.
+ *
+ */
+
 #include <string.h>
-#include "ec_local.h"
+#include "ec_lcl.h"
 #include <openssl/err.h>
 #include <openssl/obj_mac.h>
-#include <openssl/objects.h>
 #include <openssl/opensslconf.h>
-#include "internal/nelem.h"
+#include "e_os.h"
 
 typedef struct {
     int field_type,             /* either NID_X9_62_prime_field or
@@ -2205,7 +2217,7 @@ static const struct {
 #endif
 
 /*
- * These curves were added by Annie Yousar.
+ * These curves were added by Annie Yousar <a.yousar@informatik.hu-berlin.de>
  * For the definition of RFC 5639 curves see
  * http://www.ietf.org/rfc/rfc5639.txt These curves are generated verifiable
  * at random, nevertheless the seed is omitted as parameter because the
@@ -2752,45 +2764,6 @@ static const struct {
     }
 };
 
-#ifndef OPENSSL_NO_SM2
-static const struct {
-    EC_CURVE_DATA h;
-    unsigned char data[0 + 32 * 6];
-} _EC_sm2p256v1 = {
-    {
-       NID_X9_62_prime_field, 0, 32, 1
-    },
-    {
-        /* no seed */
-
-        /* p */
-        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        /* a */
-        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfc,
-        /* b */
-        0x28, 0xe9, 0xfa, 0x9e, 0x9d, 0x9f, 0x5e, 0x34, 0x4d, 0x5a, 0x9e, 0x4b,
-        0xcf, 0x65, 0x09, 0xa7, 0xf3, 0x97, 0x89, 0xf5, 0x15, 0xab, 0x8f, 0x92,
-        0xdd, 0xbc, 0xbd, 0x41, 0x4d, 0x94, 0x0e, 0x93,
-        /* x */
-        0x32, 0xc4, 0xae, 0x2c, 0x1f, 0x19, 0x81, 0x19, 0x5f, 0x99, 0x04, 0x46,
-        0x6a, 0x39, 0xc9, 0x94, 0x8f, 0xe3, 0x0b, 0xbf, 0xf2, 0x66, 0x0b, 0xe1,
-        0x71, 0x5a, 0x45, 0x89, 0x33, 0x4c, 0x74, 0xc7,
-        /* y */
-        0xbc, 0x37, 0x36, 0xa2, 0xf4, 0xf6, 0x77, 0x9c, 0x59, 0xbd, 0xce, 0xe3,
-        0x6b, 0x69, 0x21, 0x53, 0xd0, 0xa9, 0x87, 0x7c, 0xc6, 0x2a, 0x47, 0x40,
-        0x02, 0xdf, 0x32, 0xe5, 0x21, 0x39, 0xf0, 0xa0,
-        /* order */
-        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0x72, 0x03, 0xdf, 0x6b, 0x21, 0xc6, 0x05, 0x2b,
-        0x53, 0xbb, 0xf4, 0x09, 0x39, 0xd5, 0x41, 0x23,
-    }
-};
-#endif /* OPENSSL_NO_SM2 */
-
 typedef struct _ec_list_element_st {
     int nid;
     const EC_CURVE_DATA *data;
@@ -3000,10 +2973,6 @@ static const ec_list_element curve_list[] = {
      "RFC 5639 curve over a 512 bit prime field"},
     {NID_brainpoolP512t1, &_EC_brainpoolP512t1.h, 0,
      "RFC 5639 curve over a 512 bit prime field"},
-#ifndef OPENSSL_NO_SM2
-    {NID_sm2, &_EC_sm2p256v1.h, 0,
-     "SM2 curve over a 256 bit prime field"},
-#endif
 };
 
 #define curve_list_length OSSL_NELEM(curve_list)
@@ -3079,7 +3048,7 @@ static EC_GROUP *ec_group_new_from_data(const ec_list_element curve)
         ECerr(EC_F_EC_GROUP_NEW_FROM_DATA, ERR_R_BN_LIB);
         goto err;
     }
-    if (!EC_POINT_set_affine_coordinates(group, P, x, y, ctx)) {
+    if (!EC_POINT_set_affine_coordinates_GFp(group, P, x, y, ctx)) {
         ECerr(EC_F_EC_GROUP_NEW_FROM_DATA, ERR_R_EC_LIB);
         goto err;
     }
@@ -3098,32 +3067,6 @@ static EC_GROUP *ec_group_new_from_data(const ec_list_element curve)
             goto err;
         }
     }
-
-    if (EC_GROUP_get_asn1_flag(group) == OPENSSL_EC_NAMED_CURVE) {
-        /*
-         * Some curves don't have an associated OID: for those we should not
-         * default to `OPENSSL_EC_NAMED_CURVE` encoding of parameters and
-         * instead set the ASN1 flag to `OPENSSL_EC_EXPLICIT_CURVE`.
-         *
-         * Note that `OPENSSL_EC_NAMED_CURVE` is set as the default ASN1 flag on
-         * `EC_GROUP_new()`, when we don't have enough elements to determine if
-         * an OID for the curve name actually exists.
-         * We could implement this check on `EC_GROUP_set_curve_name()` but
-         * overloading the simple setter with this lookup could have a negative
-         * performance impact and unexpected consequences.
-         */
-        ASN1_OBJECT *asn1obj = OBJ_nid2obj(curve.nid);
-
-        if (asn1obj == NULL) {
-            ECerr(EC_F_EC_GROUP_NEW_FROM_DATA, ERR_R_OBJ_LIB);
-            goto err;
-        }
-        if (OBJ_length(asn1obj) == 0)
-            EC_GROUP_set_asn1_flag(group, OPENSSL_EC_EXPLICIT_CURVE);
-
-        ASN1_OBJECT_free(asn1obj);
-    }
-
     ok = 1;
  err:
     if (!ok) {
@@ -3225,6 +3168,49 @@ int EC_curve_nist2nid(const char *name)
     return NID_undef;
 }
 
+static ossl_inline
+int ec_group_get_curve(const EC_GROUP *group, BIGNUM *p, BIGNUM *a,
+                       BIGNUM *b, BN_CTX *ctx)
+{
+    int field_nid;
+
+    field_nid = EC_METHOD_get_field_type(EC_GROUP_method_of(group));
+
+#ifndef OPENSSL_NO_EC2M
+    if (field_nid == NID_X9_62_characteristic_two_field) {
+        return EC_GROUP_get_curve_GF2m(group, p, a, b, ctx);
+    } else
+#endif /* !def(OPENSSL_NO_EC2M) */
+    if (field_nid == NID_X9_62_prime_field) {
+        return EC_GROUP_get_curve_GFp(group, p, a, b, ctx);
+    } else {
+        /* this should never happen */
+        return 0;
+    }
+}
+
+static ossl_inline
+int ec_point_get_affine_coordinates(const EC_GROUP *group,
+                                    const EC_POINT *point, BIGNUM *x,
+                                    BIGNUM *y, BN_CTX *ctx)
+{
+    int field_nid;
+
+    field_nid = EC_METHOD_get_field_type(EC_GROUP_method_of(group));
+
+#ifndef OPENSSL_NO_EC2M
+    if (field_nid == NID_X9_62_characteristic_two_field) {
+        return EC_POINT_get_affine_coordinates_GF2m(group, point, x, y, ctx);
+    } else
+#endif /* !def(OPENSSL_NO_EC2M) */
+    if (field_nid == NID_X9_62_prime_field) {
+        return EC_POINT_get_affine_coordinates_GFp(group, point, x, y, ctx);
+    } else {
+        /* this should never happen */
+        return 0;
+    }
+}
+
 #define NUM_BN_FIELDS 6
 /*
  * Validates EC domain parameter data for known named curves.
@@ -3285,10 +3271,10 @@ int ec_curve_nid_from_params(const EC_GROUP *group, BN_CTX *ctx)
      * i.e. the values are p, a, b, x, y, order.
      */
     /* Get p, a & b */
-    if (!(EC_GROUP_get_curve(group, bn[0], bn[1], bn[2], ctx)
+    if (!(ec_group_get_curve(group, bn[0], bn[1], bn[2], ctx)
         && ((generator = EC_GROUP_get0_generator(group)) != NULL)
         /* Get x & y */
-        && EC_POINT_get_affine_coordinates(group, generator, bn[3], bn[4], ctx)
+        && ec_point_get_affine_coordinates(group, generator, bn[3], bn[4], ctx)
         /* Get order */
         && EC_GROUP_get_order(group, bn[5], ctx)))
         goto end;
