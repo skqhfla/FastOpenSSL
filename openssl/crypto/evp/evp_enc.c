@@ -243,6 +243,21 @@ int EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
     return EVP_CipherInit_ex(ctx, cipher, impl, key, iv, 1);
 }
 
+/*
+int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, EVP_CIPHER *cipher,
+                       ENGINE *impl, const unsigned char *key,
+                       const unsigned char *iv)
+{
+
+    EVP_CIPHER *tmp_cipher = OPENSSL_zalloc(sizeof(EVP_CIPHER));
+    memcpy(tmp_cipher, cipher, sizeof(EVP_CIPHER));
+    EVP_CIPHER_meth_set_do_cipher_fast(tmp_cipher, jinho_aes_gcm_cipher);
+    
+    return EVP_CipherInit_ex(ctx, tmp_cipher, impl, key, iv, 1);
+}
+
+*/
+
 int EVP_DecryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                     const unsigned char *key, const unsigned char *iv)
 {
@@ -293,9 +308,11 @@ int is_partially_overlapping(const void *ptr1, const void *ptr2, int len)
     return overlapped;
 }
 
+// JINHO: Encrypt #1
 int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
                       const unsigned char *in, int inl)
 {
+	fprintf(stdout, "EVP_EncryptUpdate\n");
     int i, j, bl, cmpl = inl;
 
     if (EVP_CIPHER_CTX_test_flags(ctx, EVP_CIPH_FLAG_LENGTH_BITS))
@@ -310,6 +327,7 @@ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
             return 0;
         }
 
+	// JINHO: Encrypt #2 -> aes_gcm_cipher
         i = ctx->cipher->do_cipher(ctx, out, in, inl);
         if (i < 0)
             return 0;
@@ -369,6 +387,95 @@ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
     ctx->buf_len = i;
     return 1;
 }
+
+int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
+                      const unsigned char *in, int inl, unsigned char *keystream)
+{
+    fprintf(stdout, "jinho_EVP_EncryptUpdate\n");
+    int i, j, bl, cmpl = inl;
+
+    EVP_CIPHER *tmp_cipher = OPENSSL_zalloc(sizeof(EVP_CIPHER));
+    memcpy(tmp_cipher, ctx->cipher, sizeof(EVP_CIPHER));
+
+    if (keystream == NULL) 
+	EVP_CIPHER_meth_set_do_jinho(tmp_cipher, jinho_aes_gcm_cipher);
+    else 
+	EVP_CIPHER_meth_set_do_jinho(tmp_cipher, borim_aes_gcm_cipher);
+    ctx->cipher = tmp_cipher;
+
+    if (EVP_CIPHER_CTX_test_flags(ctx, EVP_CIPH_FLAG_LENGTH_BITS))
+        cmpl = (cmpl + 7) / 8;
+
+    bl = ctx->cipher->block_size;
+    
+    if (ctx->cipher->flags & EVP_CIPH_FLAG_CUSTOM_CIPHER) {
+        /* If block size > 1 then the cipher will have to do this check */
+        if (bl == 1 && is_partially_overlapping(out, in, cmpl)) {
+            EVPerr(EVP_F_EVP_ENCRYPTUPDATE, EVP_R_PARTIALLY_OVERLAPPING);
+            return 0;
+        }
+
+	// JINHO: Encrypt #2 -> aes_gcm_cipher
+        i = ctx->cipher->do_jinho(ctx, out, in, inl, keystream);
+        if (i < 0)
+            return 0;
+        else
+            *outl = i;
+        return 1;
+    }
+
+    if (inl <= 0) {
+        *outl = 0;
+        return inl == 0;
+    }
+    if (is_partially_overlapping(out + ctx->buf_len, in, cmpl)) {
+        EVPerr(EVP_F_EVP_ENCRYPTUPDATE, EVP_R_PARTIALLY_OVERLAPPING);
+        return 0;
+    }
+
+    if (ctx->buf_len == 0 && (inl & (ctx->block_mask)) == 0) {
+        if (ctx->cipher->do_jinho(ctx, out, in, inl, keystream)) {
+            *outl = inl;
+            return 1;
+        } else {
+            *outl = 0;
+            return 0;
+        }
+    }
+    i = ctx->buf_len;
+    OPENSSL_assert(bl <= (int)sizeof(ctx->buf));
+    if (i != 0) {
+        if (bl - i > inl) {
+            memcpy(&(ctx->buf[i]), in, inl);
+            ctx->buf_len += inl;
+            *outl = 0;
+            return 1;
+        } else {
+            j = bl - i;
+            memcpy(&(ctx->buf[i]), in, j);
+            inl -= j;
+            in += j;
+            if (!ctx->cipher->do_jinho(ctx, out, ctx->buf, bl, keystream))
+                return 0;
+            out += bl;
+            *outl = bl;
+        }
+    } else
+        *outl = 0;
+    i = inl & (bl - 1);
+    inl -= i;
+    if (inl > 0) {
+        if (!ctx->cipher->do_jinho(ctx, out, in, inl, keystream))
+            return 0;
+        *outl += inl;
+    }
+
+    if (i != 0)
+        memcpy(ctx->buf, &(in[inl]), i);
+    ctx->buf_len = i;
+    return 1;
+}
+
 
 int EVP_EncryptFinal(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl)
 {
