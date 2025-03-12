@@ -1677,7 +1677,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
+                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystream))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1691,7 +1691,8 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 if (jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
-                                                len - bulk, gctx->ctr))
+                                                len - bulk, gctx->ctr,
+						keystream))
                     return -1;
             } else {
                 size_t bulk = 0;
@@ -1809,7 +1810,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
+                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystream))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1823,7 +1824,8 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 if (borim_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
-                                                len - bulk, gctx->ctr))
+                                                len - bulk, gctx->ctr, 
+						keystream))
                     return -1;
             } else {
                 size_t bulk = 0;
