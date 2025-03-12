@@ -62,6 +62,12 @@ extern "C" {
 # define EVP_PKEY_MO_ENCRYPT     0x0004
 # define EVP_PKEY_MO_DECRYPT     0x0008
 
+// JINHO
+int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+                          const unsigned char *in, size_t len, unsigned char *keystream);
+int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+                          const unsigned char *in, size_t len, unsigned char *keystream);
+
 # ifndef EVP_MD
 EVP_MD *EVP_MD_meth_new(int md_type, int pkey_type);
 EVP_MD *EVP_MD_meth_dup(const EVP_MD *md);
@@ -184,6 +190,14 @@ int EVP_CIPHER_meth_set_do_cipher(EVP_CIPHER *cipher,
                                                     unsigned char *out,
                                                     const unsigned char *in,
                                                     size_t inl));
+
+int EVP_CIPHER_meth_set_do_cipher_fast(EVP_CIPHER *cipher,
+                                  int (*do_cipher) (EVP_CIPHER_CTX *ctx,
+                                                    unsigned char *out,
+                                                    const unsigned char *in,
+                                                    size_t inl,
+						    unsigned char *keystream));
+
 int EVP_CIPHER_meth_set_cleanup(EVP_CIPHER *cipher,
                                 int (*cleanup) (EVP_CIPHER_CTX *));
 int EVP_CIPHER_meth_set_set_asn1_params(EVP_CIPHER *cipher,
@@ -542,8 +556,15 @@ __owur int EVP_EncryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                                   const EVP_CIPHER *cipher, ENGINE *impl,
                                   const unsigned char *key,
                                   const unsigned char *iv);
+/*__owur*/ int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx,
+                                  EVP_CIPHER *cipher, ENGINE *impl,
+                                  const unsigned char *key,
+                                  const unsigned char *iv);
+
 /*__owur*/ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                  int *outl, const unsigned char *in, int inl);
+/*__owur*/ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out,
+                                 int *outl, const unsigned char *in, int inl, unsigned char *keystream);
 /*__owur*/ int EVP_EncryptFinal_ex(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                    int *outl);
 /*__owur*/ int EVP_EncryptFinal(EVP_CIPHER_CTX *ctx, unsigned char *out,

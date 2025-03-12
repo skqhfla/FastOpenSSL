@@ -5,6 +5,7 @@
 #include <openssl/rand.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -31,6 +32,8 @@ atomic_bool stop_flag = false;     // ks_thread 종료 플래그
 void aes_gcm_generate_keystream(unsigned char *keystream)
 {
     // TODO : AES_Encrypt 함수 호출 후 buffer에 저장하는 코드 필요.
+    int len;
+    jinho_EVP_EncryptUpdate(ctx, keystream, &len, "A", 1, NULL);
 }
 
 // Keystream 생성 스레드
@@ -46,6 +49,7 @@ void *keystream_generator_thread(void *arg)
         }
 
         aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
+	fprintf(stdout, "keystream: %s\n\n", ks_buffer.keystreams[ks_buffer.tail]);
         ks_buffer.tail = next_tail;
     }
 
@@ -95,9 +99,9 @@ void *xor_encryption_thread(void *arg)
                                     : (plaintext_len - offset);
 
             int out_nbytes = 0;
-            EVP_EncryptUpdate_fast(ctx, out_buf, &out_nbytes, in_buf, block_size);
+            jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, block_size, keystream);
 
-            if (fwrite(ciphertext, 1, block_size, out_file) != block_size)
+            if (fwrite(out_buf, 1, block_size, out_file) != block_size)
             {
                 fprintf(stderr, "Error writing ciphertext to file\n");
             }
