@@ -229,6 +229,7 @@ static const EVP_CIPHER cname##_##mode = { \
         flags | EVP_CIPH_##MODE##_MODE, \
         init_key, \
         cname##_##mode##_cipher, \
+        NULL, \
         cleanup, \
         sizeof(kstruct), \
         set_asn1, get_asn1,\

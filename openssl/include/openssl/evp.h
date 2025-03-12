@@ -812,6 +812,7 @@ const EVP_CIPHER *EVP_aes_256_xts(void);
 const EVP_CIPHER *EVP_aes_256_wrap(void);
 const EVP_CIPHER *EVP_aes_256_wrap_pad(void);
 const EVP_CIPHER *jinho_EVP_aes_256_gcm(void);
+const EVP_CIPHER *borim_EVP_aes_256_gcm(void);
 # ifndef OPENSSL_NO_OCB
 const EVP_CIPHER *EVP_aes_256_ocb(void);
 # endif

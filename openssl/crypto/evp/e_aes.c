@@ -1809,7 +1809,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
+                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1820,7 +1820,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     bulk += res;
                 }
 #endif
-                if (jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
+                if (borim_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
                                                 len - bulk, gctx->ctr))
