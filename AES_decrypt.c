@@ -29,13 +29,15 @@ unsigned char iv[IV_LENGTH];       // AES-GCM IV (Nonce)
 EVP_CIPHER_CTX *ctx;               // OpenSSL 컨텍스트
 atomic_bool stop_flag = false;     // ks_thread 종료 플래그
 
-static const char *ciphertext_file = "ciphertext.txt";
+static const char *ciphertext_file = "ciphertext.bin";
 static const char *plaintext_file = "plaintext.txt";
 
 // AES-GCM을 사용한 keystream 생성 함수
 void aes_gcm_generate_keystream(unsigned char *keystream)
 {
     // TODO : AES_Encrypt 함수 호출 후 buffer에 저장하는 코드 필요.
+    int len;
+    jinho_EVP_EncryptUpdate(ctx, keystream, &len, "A", 1, NULL);
 }
 
 // Keystream 생성 스레드
@@ -51,6 +53,7 @@ void *keystream_generator_thread(void *arg)
         }
 
         aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
+	
         ks_buffer.tail = next_tail;
     }
 
@@ -69,28 +72,28 @@ void *xor_encryption_thread(void *arg)
     if (err)
     {
         fprintf(stderr, "Could not stat input file \"%s\"\n", ciphertext_file);
-        return -1;
+        return NULL;
     }
 
     size_t in_file_size = in_file_stat.st_size;
     if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
     {
         fprintf(stderr, "Input file \"%s\" is too short\n", ciphertext_file);
-        return -1;
+        return NULL;
     }
 
     in_file = fopen(ciphertext_file, "rb");
     if (!in_file)
     {
         fprintf(stderr, "Could not open input file \"%s\"\n", ciphertext_file);
-        return -1;
+        return NULL;
     }
 
     out_file = fopen(plaintext_file, "wb");
     if (!out_file)
     {
         fprintf(stderr, "Could not open output file \"%s\"\n", plaintext_file);
-        return -1;
+        return NULL;
     }
 
     size_t auth_tag_pos = in_file_size - AUTH_TAG_LENGTH;
@@ -102,6 +105,7 @@ void *xor_encryption_thread(void *arg)
 
     size_t in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
     size_t current_pos = in_nbytes;
+    printf("Decrypt IV: %s\n", iv);
 
     while (current_pos < auth_tag_pos)
     {
@@ -124,7 +128,11 @@ void *xor_encryption_thread(void *arg)
         ks_buffer.head = (ks_buffer.head + 1) % BUFFER_SIZE;
 
         int out_nbytes = 0;
-        EVP_EncryptUpdate_fast(ctx, out_buf, &out_nbytes, in_buf, in_nbytes);
+	for (int i=0; i<16; i++) {
+		fprintf(stderr, " %02X",keystream[i]);
+	}
+	fprintf(stderr, "\n");
+        jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, keystream);
 
         // 파일에 쓰기
         if (fwrite(out_buf, 1, in_nbytes, out_file) != in_nbytes)
@@ -194,21 +202,21 @@ int main(int argc, char *argv[])
     if (err)
     {
         fprintf(stderr, "Could not stat input file \"%s\"\n", ciphertext_file);
-        return -1;
+        return NULL;
     }
 
     size_t in_file_size = in_file_stat.st_size;
     if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
     {
         fprintf(stderr, "Input file \"%s\" is too short\n", ciphertext_file);
-        return -1;
+        return NULL;
     }
 
     in_file = fopen(ciphertext_file, "rb");
     if (!in_file)
     {
         fprintf(stderr, "Could not open input file \"%s\"\n", ciphertext_file);
-        return -1;
+        return NULL;
     }
 
     size_t in_nbytes = fread(iv, 1, IV_LENGTH, in_file);

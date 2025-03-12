@@ -1755,6 +1755,7 @@ int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         ctr = ctx->Yi.d[3];
 
 # if defined(GHASH) && defined(GHASH_CHUNK)
+    /*
     while (len >= GHASH_CHUNK) {
         (*stream) (in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
         ctr += GHASH_CHUNK / 16;
@@ -1771,7 +1772,9 @@ int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         in += GHASH_CHUNK;
         len -= GHASH_CHUNK;
     }
+    */
 # endif
+    /*
     if ((i = (len & (size_t)-16))) {
         size_t j = i / 16;
 
@@ -1799,6 +1802,7 @@ int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         }
 # endif
     }
+    */
     if (len) {
         (*ctx->block) (ctx->Yi.c, ctx->EKi.c, key);
         ++ctr;
@@ -1866,6 +1870,7 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         }
     }
 # if defined(GHASH) && defined(GHASH_CHUNK)
+    /*
     while (len >= GHASH_CHUNK) {
 	fprintf(stdout, "Before stream #1\n");
         (*stream) (in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
@@ -1884,7 +1889,9 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         in += GHASH_CHUNK;
         len -= GHASH_CHUNK;
     }
+    */
 # endif
+    /*
     if ((i = (len & (size_t)-16))) {
         size_t j = i / 16;
 
@@ -1914,6 +1921,7 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         }
 # endif
     }
+    */
     if (len) {
         while (len--) {
             ctx->Xi.c[n] ^= out[n] = in[n] ^ keystream[n];

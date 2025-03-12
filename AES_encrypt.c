@@ -49,8 +49,7 @@ void *keystream_generator_thread(void *arg)
         }
 
         aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
-	fprintf(stdout, "keystream: %s\n\n", ks_buffer.keystreams[ks_buffer.tail]);
-        ks_buffer.tail = next_tail;
+	ks_buffer.tail = next_tail;
     }
 
     printf("Keystream generator thread exiting...\n");
@@ -60,12 +59,12 @@ void *keystream_generator_thread(void *arg)
 // XOR 연산 스레드
 void *xor_encryption_thread(void *arg)
 {
-    unsigned char plaintext[] = "This is a test message that is longer than 16 bytes!";
+    unsigned char plaintext[] = "1234567890abcdefhi";
     size_t plaintext_len = strlen((char *)plaintext);
     unsigned char ciphertext[AES_GCM_BLOCK_SIZE];
     unsigned char auth_tag[AUTH_TAG_LENGTH];
 
-    FILE *out_file = fopen("ciphertext.bin", "ab");
+    FILE *out_file = fopen("ciphertext.bin", "wb");
     if (!out_file)
     {
         fprintf(stderr, "Failed to open ciphertext.bin for writing\n");
@@ -99,6 +98,10 @@ void *xor_encryption_thread(void *arg)
                                     : (plaintext_len - offset);
 
             int out_nbytes = 0;
+	    for (int i=0; i<16; i++) {
+		fprintf(stderr, " %02X",keystream[i]);
+	    }
+	    fprintf(stderr, "\n");
             jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, block_size, keystream);
 
             if (fwrite(out_buf, 1, block_size, out_file) != block_size)
@@ -168,6 +171,7 @@ int main(int argc, char *argv[])
     }
 
     // AES-GCM 모드 설정
+    printf("Encrypt IV: %s\n", iv);
     if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
