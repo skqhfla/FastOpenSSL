@@ -1622,6 +1622,7 @@ sub check_version_lte()
 	$lentv = length $testversion;
 	$lencv = length $currversion;
 
+
 	#If the testversion has more letters than the current version then it must
 	#be later (or malformed)
 	if ($lentv > $lencv) {

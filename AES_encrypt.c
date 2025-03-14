@@ -71,6 +71,7 @@ void *xor_encryption_thread(void *arg)
         return NULL;
     }
 
+    //
     fwrite(iv, 1, IV_LENGTH, out_file); // IV 저장 (최초 1회)
 
     const size_t BUF_SIZE = 64 * 1024;
@@ -122,7 +123,7 @@ void *xor_encryption_thread(void *arg)
     EVP_EncryptFinal_ex(ctx, NULL, &len);
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, AUTH_TAG_LENGTH, auth_tag);
     fwrite(auth_tag, 1, AUTH_TAG_LENGTH, out_file); // 인증 태그 저장
-
+//
     fclose(out_file);
     return NULL;
 }
