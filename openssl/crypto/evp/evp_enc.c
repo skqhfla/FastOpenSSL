@@ -389,7 +389,7 @@ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
 }
 
 int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
-                      const unsigned char *in, int inl, unsigned char *keystream)
+                      const unsigned char *in, int inl, void *keystruct)
 {
     fprintf(stdout, "jinho_EVP_EncryptUpdate\n");
     int i, j, bl, cmpl = inl;
@@ -397,7 +397,7 @@ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
     EVP_CIPHER *tmp_cipher = OPENSSL_zalloc(sizeof(EVP_CIPHER));
     memcpy(tmp_cipher, ctx->cipher, sizeof(EVP_CIPHER));
 
-    if (keystream == NULL) 
+    if (keystruct == NULL) 
 	EVP_CIPHER_meth_set_do_jinho(tmp_cipher, jinho_aes_gcm_cipher);
     else 
 	EVP_CIPHER_meth_set_do_jinho(tmp_cipher, borim_aes_gcm_cipher);
@@ -416,7 +416,7 @@ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
         }
 
 	// JINHO: Encrypt #2 -> aes_gcm_cipher
-        i = ctx->cipher->do_jinho(ctx, out, in, inl, keystream);
+        i = ctx->cipher->do_jinho(ctx, out, in, inl, keystruct);
         if (i < 0)
             return 0;
         else
@@ -434,7 +434,7 @@ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
     }
 
     if (ctx->buf_len == 0 && (inl & (ctx->block_mask)) == 0) {
-        if (ctx->cipher->do_jinho(ctx, out, in, inl, keystream)) {
+        if (ctx->cipher->do_jinho(ctx, out, in, inl, keystruct)) {
             *outl = inl;
             return 1;
         } else {
@@ -455,7 +455,7 @@ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
             memcpy(&(ctx->buf[i]), in, j);
             inl -= j;
             in += j;
-            if (!ctx->cipher->do_jinho(ctx, out, ctx->buf, bl, keystream))
+            if (!ctx->cipher->do_jinho(ctx, out, ctx->buf, bl, keystruct))
                 return 0;
             out += bl;
             *outl = bl;
@@ -465,7 +465,7 @@ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
     i = inl & (bl - 1);
     inl -= i;
     if (inl > 0) {
-        if (!ctx->cipher->do_jinho(ctx, out, in, inl, keystream))
+        if (!ctx->cipher->do_jinho(ctx, out, in, inl, keystruct))
             return 0;
         *outl += inl;
     }

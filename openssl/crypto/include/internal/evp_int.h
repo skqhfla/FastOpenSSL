@@ -117,7 +117,7 @@ struct evp_cipher_st {
                       const unsigned char *in, size_t inl);
 
     int (*do_jinho) (EVP_CIPHER_CTX *ctx, unsigned char *out,
-                      const unsigned char *in, size_t inl, unsigned char *keystream);
+                      const unsigned char *in, size_t inl, void *keystruct);
 
     /* cleanup ctx */
     int (*cleanup) (EVP_CIPHER_CTX *);

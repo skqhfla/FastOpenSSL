@@ -1,5 +1,5 @@
-CFLAGS  += -g -Og -Wall -DDEBUG=1 -DUNUSEDRESULT_DEBUG=1 -I$(HOME)/openssl_build/include
-LDFLAGS += -L$(HOME)/openssl_build/lib
+CFLAGS  += -g -Og -Wall -DDEBUG=1 -DUNUSEDRESULT_DEBUG=1 -I$(HOME)/FastOpenSSL/openssl/include
+LDFLAGS += -L$(HOME)/FastOpenSSL/openssl
 LDLIBS  += -lssl -lcrypto
 
 C_FILES := $(wildcard *.c)

@@ -78,23 +78,12 @@ int EVP_CIPHER_meth_set_do_cipher(EVP_CIPHER *cipher,
     return 1;
 }
 
-int EVP_CIPHER_meth_set_do_cipher_fast(EVP_CIPHER *cipher,
-                                  int (*do_cipher) (EVP_CIPHER_CTX *ctx,
-                                                    unsigned char *out,
-                                                    const unsigned char *in,
-                                                    size_t inl,
-						    unsigned char *keystream))
-{
-    cipher->do_cipher = do_cipher;
-    return 1;
-}
-
 int EVP_CIPHER_meth_set_do_jinho(EVP_CIPHER *cipher,
                                   int (*do_jinho) (EVP_CIPHER_CTX *ctx,
                                                     unsigned char *out,
                                                     const unsigned char *in,
                                                     size_t inl,
-						    unsigned char *keystream))
+						   void *keystruct))
 {
     cipher->do_jinho = do_jinho;
     return 1;

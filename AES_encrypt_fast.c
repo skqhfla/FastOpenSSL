@@ -4,11 +4,10 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <string.h>
-#include <stdbool.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <time.h>
-#include <sys/stat.h>
 
 #define BUFFER_SIZE 256 // Circular buffer 크기
 #define IV_LENGTH 12
@@ -28,9 +27,7 @@ unsigned char aes_key[KEY_LENGTH]; // AES 256-bit 키
 unsigned char iv[IV_LENGTH];       // AES-GCM IV (Nonce)
 EVP_CIPHER_CTX *ctx;               // OpenSSL 컨텍스트
 atomic_bool stop_flag = false;     // ks_thread 종료 플래그
-
-static const char *ciphertext_file = "ciphertext.bin";
-static const char *plaintext_file = "plaintext.txt";
+FILE *keystream_file = NULL;
 
 // AES-GCM을 사용한 keystream 생성 함수
 void aes_gcm_generate_keystream(unsigned char *keystream)
@@ -43,6 +40,7 @@ void aes_gcm_generate_keystream(unsigned char *keystream)
 // Keystream 생성 스레드
 void *keystream_generator_thread(void *arg)
 {
+    keystream_file = fopen("./keystream.log", "w");
     while (!stop_flag) // 🔹 종료 플래그를 확인하여 루프 탈출
     {
         int next_tail = (ks_buffer.tail + 1) % BUFFER_SIZE;
@@ -53,8 +51,11 @@ void *keystream_generator_thread(void *arg)
         }
 
         aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
-	
-        ks_buffer.tail = next_tail;
+	for (int i=0; i<16; i++) 
+		fprintf(keystream_file, "%02x", ks_buffer.keystreams[ks_buffer.tail][i]);
+	fprintf(keystream_file, "\n");
+	ks_buffer.tail = next_tail;
+
     }
 
     printf("Keystream generator thread exiting...\n");
@@ -64,99 +65,53 @@ void *keystream_generator_thread(void *arg)
 // XOR 연산 스레드
 void *xor_encryption_thread(void *arg)
 {
-    FILE *in_file = NULL;
-    FILE *out_file = NULL;
+    unsigned char plaintext[] = "1234567890\0";
+    size_t plaintext_len = strlen((char *)plaintext);
+    unsigned char ciphertext[AES_GCM_BLOCK_SIZE];
+    unsigned char auth_tag[AUTH_TAG_LENGTH];
 
-    struct stat in_file_stat;
-    int err = stat(ciphertext_file, &in_file_stat);
-    if (err)
-    {
-        fprintf(stderr, "Could not stat input file \"%s\"\n", ciphertext_file);
-        return NULL;
-    }
-
-    size_t in_file_size = in_file_stat.st_size;
-    if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
-    {
-        fprintf(stderr, "Input file \"%s\" is too short\n", ciphertext_file);
-        return NULL;
-    }
-
-    in_file = fopen(ciphertext_file, "rb");
-    if (!in_file)
-    {
-        fprintf(stderr, "Could not open input file \"%s\"\n", ciphertext_file);
-        return NULL;
-    }
-
-    out_file = fopen(plaintext_file, "wb");
+    FILE *out_file = fopen("ciphertext.bin", "wb");
     if (!out_file)
     {
-        fprintf(stderr, "Could not open output file \"%s\"\n", plaintext_file);
+        fprintf(stderr, "Failed to open ciphertext.bin for writing\n");
         return NULL;
     }
 
-    size_t auth_tag_pos = in_file_size - AUTH_TAG_LENGTH;
-    unsigned char auth_tag[AUTH_TAG_LENGTH];
+    fwrite(iv, 1, IV_LENGTH, out_file); // IV 저장 (최초 1회)
+
+    const size_t BUF_SIZE = 64 * 1024;
     const size_t BLOCK_SIZE = 16;
+    unsigned char *in_buf = malloc(BUF_SIZE);
+    unsigned char *out_buf = malloc(BUF_SIZE + BLOCK_SIZE);
 
-    unsigned char in_buf[BLOCK_SIZE];
-    unsigned char out_buf[BLOCK_SIZE];
-
-    size_t in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
-    size_t current_pos = in_nbytes;
-    printf("Decrypt IV: %s\n", iv);
-
-    while (current_pos < auth_tag_pos)
+    for (int repeat = 0; repeat < 5; repeat++)
     {
-        // 항상 16바이트 이하로 읽도록 설정
-        size_t in_nbytes_left = auth_tag_pos - current_pos;
-        size_t in_nbytes_wanted = in_nbytes_left < BLOCK_SIZE ? in_nbytes_left : BLOCK_SIZE;
-
-        in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
-        current_pos += in_nbytes;
-
-        if (ks_buffer.head == ks_buffer.tail)
+        size_t offset = 0;
+        while (offset < plaintext_len)
         {
-            usleep(1000); // 버퍼가 비었으면 대기
-            continue;
+	    int out_nbytes = 0;
+            jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, plaintext, plaintext_len, &ks_buffer);
+
+            if (fwrite(out_buf, 1, out_nbytes, out_file) != out_nbytes)
+            {
+                fprintf(stderr, "Error writing ciphertext to file\n");
+            }
+
+            printf("Block %zu saved to ciphertext.bin\n", offset / AES_GCM_BLOCK_SIZE);
+            offset += out_nbytes;
         }
 
-        // Keystream 가져오기
-        unsigned char keystream[AES_GCM_BLOCK_SIZE];
-        memcpy(keystream, ks_buffer.keystreams[ks_buffer.head], AES_GCM_BLOCK_SIZE);
-        ks_buffer.head = (ks_buffer.head + 1) % BUFFER_SIZE;
-
-        int out_nbytes = 0;
-	for (int i=0; i<16; i++) {
-		fprintf(stderr, " %02X",keystream[i]);
-	}
-	fprintf(stderr, "\n");
-        jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, keystream);
-
-        // 파일에 쓰기
-        if (fwrite(out_buf, 1, in_nbytes, out_file) != in_nbytes)
-        {
-            fprintf(stderr, "Error writing ciphertext to file\n");
-        }
+        usleep(10000); // 10ms 대기
     }
 
     stop_flag = true;
 
-    in_nbytes = fread(auth_tag, 1, AUTH_TAG_LENGTH, in_file);
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, AUTH_TAG_LENGTH, auth_tag);
-
-    int out_nbytes = 0;
-    int ok = EVP_DecryptFinal(ctx, out_buf, &out_nbytes);
-    fwrite(out_buf, 1, out_nbytes, out_file);
-
-    if (!ok)
-    {
-        fprintf(stdout, "Decryption error\n");
-    }
+    int len;
+    EVP_EncryptFinal_ex(ctx, NULL, &len);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, AUTH_TAG_LENGTH, auth_tag);
+    fwrite(auth_tag, 1, AUTH_TAG_LENGTH, out_file); // 인증 태그 저장
 
     fclose(out_file);
-    fclose(in_file);
     return NULL;
 }
 
@@ -195,35 +150,16 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    FILE *in_file = NULL;
-
-    struct stat in_file_stat;
-    int err = stat(ciphertext_file, &in_file_stat);
-    if (err)
+    // IV (Nonce) 생성
+    if (RAND_bytes(iv, IV_LENGTH) != 1)
     {
-        fprintf(stderr, "Could not stat input file \"%s\"\n", ciphertext_file);
-        return NULL;
+        fprintf(stderr, "Failed to generate IV\n");
+        EVP_CIPHER_CTX_free(ctx);
+        exit(EXIT_FAILURE);
     }
-
-    size_t in_file_size = in_file_stat.st_size;
-    if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
-    {
-        fprintf(stderr, "Input file \"%s\" is too short\n", ciphertext_file);
-        return NULL;
-    }
-
-    in_file = fopen(ciphertext_file, "rb");
-    if (!in_file)
-    {
-        fprintf(stderr, "Could not open input file \"%s\"\n", ciphertext_file);
-        return NULL;
-    }
-
-    size_t in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
-
-    fclose(in_file);
 
     // AES-GCM 모드 설정
+    printf("Encrypt IV: %s\n", iv);
     if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");

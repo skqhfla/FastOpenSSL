@@ -1650,7 +1650,7 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 // JINHO: Encrypt #2
 int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-                          const unsigned char *in, size_t len, unsigned char *keystream)
+                          const unsigned char *in, size_t len, void *keystruct)
 {
     fprintf(stdout, "jinho_aes_gcm_cipher\n");
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
@@ -1677,7 +1677,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystream))
+                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystruct))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1692,7 +1692,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                                 in + bulk,
                                                 out + bulk,
                                                 len - bulk, gctx->ctr,
-						keystream))
+						keystruct))
                     return -1;
             } else {
                 size_t bulk = 0;
@@ -1783,7 +1783,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 // JINHO: Encrypt #2
 int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-                          const unsigned char *in, size_t len, unsigned char *keystream)
+                          const unsigned char *in, size_t len, void *keystruct)
 {
     fprintf(stdout, "borim_aes_gcm_cipher\n");
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
@@ -1810,7 +1810,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystream))
+                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystruct))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1825,7 +1825,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                                 in + bulk,
                                                 out + bulk,
                                                 len - bulk, gctx->ctr, 
-						keystream))
+						keystruct))
                     return -1;
             } else {
                 size_t bulk = 0;
