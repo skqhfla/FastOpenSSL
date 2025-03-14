@@ -29,7 +29,7 @@ unsigned char iv[IV_LENGTH];       // AES-GCM IV (Nonce)
 EVP_CIPHER_CTX *ctx;               // OpenSSL 컨텍스트
 atomic_bool stop_flag = false;     // ks_thread 종료 플래그
 
-static const char *ciphertext_file = "ciphertext.bin";
+static const char *ciphertext_file = "orgincipher.bin";
 static const char *plaintext_file = "plaintext.txt";
 
 // AES-GCM을 사용한 keystream 생성 함수

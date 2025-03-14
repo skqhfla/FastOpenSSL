@@ -52,7 +52,7 @@ void *keystream_generator_thread(void *arg)
 
         aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
 	for (int i=0; i<16; i++) 
-		fprintf(keystream_file, "%02x", ks_buffer.keystreams[ks_buffer.tail][i]);
+		fprintf(keystream_file, "\\%03o", ks_buffer.keystreams[ks_buffer.tail][i]);
 	fprintf(keystream_file, "\n");
 	ks_buffer.tail = next_tail;
 
@@ -84,6 +84,10 @@ void *xor_encryption_thread(void *arg)
     unsigned char *in_buf = malloc(BUF_SIZE);
     unsigned char *out_buf = malloc(BUF_SIZE + BLOCK_SIZE);
 
+    struct timespec start, end;
+    double elapsed_time;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
     for (int repeat = 0; repeat < 5; repeat++)
     {
         size_t offset = 0;
@@ -104,6 +108,12 @@ void *xor_encryption_thread(void *arg)
         usleep(10000); // 10ms 대기
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
+
+    printf("Execution time: %.6f seconds\n", elapsed_time);
+
     stop_flag = true;
 
     int len;
@@ -117,11 +127,6 @@ void *xor_encryption_thread(void *arg)
 
 int main(int argc, char *argv[])
 {
-    struct timespec start, end;
-    double elapsed_time;
-
-    // 시작 시간 기록
-    clock_gettime(CLOCK_MONOTONIC, &start);
 
     pthread_t ks_thread, xor_thread;
 
@@ -179,13 +184,6 @@ int main(int argc, char *argv[])
     pthread_join(xor_thread, NULL);
     pthread_join(ks_thread, NULL);
 
-    // 종료 시간 기록
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    // 경과 시간 계산 (초 단위 변환)
-    elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
-
-    printf("Execution time: %.6f seconds\n", elapsed_time);
 
     // OpenSSL Context 해제
     EVP_CIPHER_CTX_free(ctx);
