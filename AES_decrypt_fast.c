@@ -107,6 +107,10 @@ void *xor_encryption_thread(void *arg)
     size_t current_pos = in_nbytes;
     printf("Decrypt IV: %s\n", iv);
 
+    struct timespec start, end;
+    double elapsed_time;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
     while (current_pos < auth_tag_pos) {
         size_t in_nbytes_left = auth_tag_pos - current_pos;
         size_t in_nbytes_wanted = in_nbytes_left < BUF_SIZE ? in_nbytes_left : BUF_SIZE;
@@ -118,6 +122,12 @@ void *xor_encryption_thread(void *arg)
         jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
         fwrite(out_buf, 1, out_nbytes, out_file);
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
+
+    printf("Execution time: %.6f seconds\n", elapsed_time);
 
     stop_flag = true;
 
@@ -140,11 +150,6 @@ void *xor_encryption_thread(void *arg)
 
 int main(int argc, char *argv[])
 {
-    struct timespec start, end;
-    double elapsed_time;
-
-    // 시작 시간 기록
-    clock_gettime(CLOCK_MONOTONIC, &start);
 
     pthread_t ks_thread, xor_thread;
 
@@ -221,13 +226,6 @@ int main(int argc, char *argv[])
     pthread_join(xor_thread, NULL);
     pthread_join(ks_thread, NULL);
 
-    // 종료 시간 기록
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    // 경과 시간 계산 (초 단위 변환)
-    elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
-
-    printf("Execution time: %.6f seconds\n", elapsed_time);
 
     // OpenSSL Context 해제
     EVP_CIPHER_CTX_free(ctx);
