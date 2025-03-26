@@ -1,11 +1,21 @@
 #!/bin/bash
 
-
+echo "### Fast OpenSSL"
 echo "ENCRYPT"
-./AES_encrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 2>enc_iv.txt
+./AES_encrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 a028eb07023576033da01073 2>enc_iv.txt
 echo
-
-./AES_encrypt e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61
 
 echo "DECRYPT"
 ./AES_decrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 2>dec_iv.txt
+echo 
+
+echo "### Original OpenSSL"
+echo "ENCRYPT"
+./AES_encrypt e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 a028eb07023576033da01073
+echo
+
+echo "DECRYPT"
+./AES_decrypt e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61
+echo
+
+

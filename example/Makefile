@@ -1,5 +1,5 @@
-CFLAGS  += -g -Og -Wall -DDEBUG=1 -DUNUSEDRESULT_DEBUG=1 -I./openssl/include
-LDFLAGS += -L./openssl
+CFLAGS  += -g -Og -Wall -DDEBUG=1 -DUNUSEDRESULT_DEBUG=1 -I../openssl/include
+LDFLAGS += -L../openssl
 LDLIBS  += -lssl -lcrypto
 
 C_FILES := $(wildcard *.c)

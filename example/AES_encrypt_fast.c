@@ -24,13 +24,10 @@ typedef struct
 
 CircularBuffer ks_buffer;
 unsigned char aes_key[KEY_LENGTH]; // AES 256-bit 키
-unsigned char aes_iv[IV_LENGTH];       // AES-GCM IV (Nonce)
+unsigned char iv[IV_LENGTH];       // AES-GCM IV (Nonce)
 EVP_CIPHER_CTX *ctx;               // OpenSSL 컨텍스트
 atomic_bool stop_flag = false;     // ks_thread 종료 플래그
 FILE *keystream_file = NULL;
-
-const char *input_filename = "plaintext";
-FILE *input_file = NULL;
 
 // AES-GCM을 사용한 keystream 생성 함수
 void aes_gcm_generate_keystream(unsigned char *keystream)
@@ -68,16 +65,19 @@ void *keystream_generator_thread(void *arg)
 // XOR 연산 스레드
 void *xor_encryption_thread(void *arg)
 {
+    unsigned char plaintext[] = "1234567890\0";
+    size_t plaintext_len = strlen((char *)plaintext);
+    unsigned char ciphertext[AES_GCM_BLOCK_SIZE];
     unsigned char auth_tag[AUTH_TAG_LENGTH];
 
-    FILE *out_file = fopen("encrypt_fast.out", "wb");
+    FILE *out_file = fopen("ciphertext.bin", "wb");
     if (!out_file)
     {
         fprintf(stderr, "Failed to open ciphertext.bin for writing\n");
         return NULL;
     }
 
-    fwrite(aes_iv, 1, IV_LENGTH, out_file); // IV 저장 (최초 1회)
+    fwrite(iv, 1, IV_LENGTH, out_file); // IV 저장 (최초 1회)
 
     const size_t BUF_SIZE = 64 * 1024;
     const size_t BLOCK_SIZE = 16;
@@ -88,17 +88,31 @@ void *xor_encryption_thread(void *arg)
     double elapsed_time;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
-    while (!feof(input_file)) {
-        size_t in_nbytes = fread(in_buf, 1, BUF_SIZE, input_file);
+    for (int repeat = 0; repeat < 5; repeat++)
+    {
+        size_t offset = 0;
+        while (offset < plaintext_len)
+        {
+	    int out_nbytes = 0;
+            jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, plaintext, plaintext_len, &ks_buffer);
 
-        int out_nbytes = 0;
-        jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
-        fwrite(out_buf, 1, out_nbytes, out_file);
+            if (fwrite(out_buf, 1, out_nbytes, out_file) != out_nbytes)
+            {
+                fprintf(stderr, "Error writing ciphertext to file\n");
+            }
+
+            printf("Block %zu saved to ciphertext.bin\n", offset / AES_GCM_BLOCK_SIZE);
+            offset += out_nbytes;
+        }
+
+        usleep(10000); // 10ms 대기
     }
+
     clock_gettime(CLOCK_MONOTONIC, &end);
+
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
 
-    printf("[AES_encrypt_fast] Execution time: %.6f seconds\n", elapsed_time);
+    printf("Execution time: %.6f seconds\n", elapsed_time);
 
     stop_flag = true;
 
@@ -117,13 +131,11 @@ int main(int argc, char *argv[])
     pthread_t ks_thread, xor_thread;
 
     // 명령행 인자로 AES 키 받기
-    if (argc != 3 || strlen(argv[1]) != KEY_LENGTH * 2)
+    if (argc != 2 || strlen(argv[1]) != KEY_LENGTH * 2)
     {
         fprintf(stderr, "Usage: %s <32-byte AES key (64 hex chars)>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-
-    input_file = fopen(input_filename, "rb");
 
     long decoded_key_len = 0;
     unsigned char *key = OPENSSL_hexstr2buf(argv[1], &decoded_key_len);
@@ -143,7 +155,6 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    /*
     // IV (Nonce) 생성
     if (RAND_bytes(iv, IV_LENGTH) != 1)
     {
@@ -151,21 +162,10 @@ int main(int argc, char *argv[])
         EVP_CIPHER_CTX_free(ctx);
         exit(EXIT_FAILURE);
     }
-    */
-
-    unsigned char *iv = OPENSSL_hexstr2buf(argv[2], &decoded_key_len);
-    if (!iv || decoded_key_len != IV_LENGTH)
-    {
-        fprintf(stderr, "Invalid AES iv! Must be %d bytes (64 hex chars).\n", IV_LENGTH);
-        exit(EXIT_FAILURE);
-    }
-    memcpy(aes_iv, iv, IV_LENGTH);
-    OPENSSL_free(iv);
-
 
     // AES-GCM 모드 설정
     printf("Encrypt IV: %s\n", iv);
-    if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
+    if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

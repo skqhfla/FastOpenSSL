@@ -312,7 +312,6 @@ int is_partially_overlapping(const void *ptr1, const void *ptr2, int len)
 int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
                       const unsigned char *in, int inl)
 {
-	fprintf(stdout, "EVP_EncryptUpdate\n");
     int i, j, bl, cmpl = inl;
 
     if (EVP_CIPHER_CTX_test_flags(ctx, EVP_CIPH_FLAG_LENGTH_BITS))
@@ -391,9 +390,9 @@ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
 int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
                       const unsigned char *in, int inl, void *keystruct)
 {
-    fprintf(stdout, "jinho_EVP_EncryptUpdate\n");
     int i, j, bl, cmpl = inl;
 
+    // Can optimize 
     EVP_CIPHER *tmp_cipher = OPENSSL_zalloc(sizeof(EVP_CIPHER));
     memcpy(tmp_cipher, ctx->cipher, sizeof(EVP_CIPHER));
 

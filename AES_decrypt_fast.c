@@ -29,8 +29,10 @@ unsigned char iv[IV_LENGTH];       // AES-GCM IV (Nonce)
 EVP_CIPHER_CTX *ctx;               // OpenSSL 컨텍스트
 atomic_bool stop_flag = false;     // ks_thread 종료 플래그
 
-static const char *ciphertext_file = "orgincipher.bin";
-static const char *plaintext_file = "plaintext.txt";
+FILE *in_file = NULL;
+FILE *out_file = NULL;
+static const char *ciphertext_file = "encrypt_fast.out";
+static const char *plaintext_file = "decrypt_fast.out";
 
 // AES-GCM을 사용한 keystream 생성 함수
 void aes_gcm_generate_keystream(unsigned char *keystream)
@@ -105,7 +107,6 @@ void *xor_encryption_thread(void *arg)
 
     size_t in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
     size_t current_pos = in_nbytes;
-    printf("Decrypt IV: %s\n", iv);
 
     struct timespec start, end;
     double elapsed_time;
@@ -127,7 +128,7 @@ void *xor_encryption_thread(void *arg)
 
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
 
-    printf("Execution time: %.6f seconds\n", elapsed_time);
+    printf("[AES_decrypt_fast] Execution time: %.6f seconds\n", elapsed_time);
 
     stop_flag = true;
 
