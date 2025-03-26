@@ -505,7 +505,7 @@ static const EVP_CIPHER aesni_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aesni_init_key,                 \
         aesni_##mode##_cipher,          \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -515,7 +515,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_init_key,                   \
         aes_##mode##_cipher,            \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -529,7 +529,7 @@ static const EVP_CIPHER aesni_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aesni_##mode##_init_key,        \
         aesni_##mode##_cipher,          \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -539,7 +539,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_##mode##_init_key,          \
         aes_##mode##_cipher,            \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -917,7 +917,7 @@ static const EVP_CIPHER aes_t4_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_t4_init_key,                \
         aes_t4_##mode##_cipher,         \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -927,7 +927,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_init_key,                   \
         aes_##mode##_cipher,            \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -941,7 +941,7 @@ static const EVP_CIPHER aes_t4_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_t4_##mode##_init_key,       \
         aes_t4_##mode##_cipher,         \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -951,7 +951,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_##mode##_init_key,          \
         aes_##mode##_cipher,            \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -966,7 +966,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_init_key,                   \
         aes_##mode##_cipher,            \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -980,7 +980,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_##mode##_init_key,          \
         aes_##mode##_cipher,            \
-        jinho_aes_gcm_cipher,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -2577,7 +2577,7 @@ static const EVP_CIPHER aes_128_wrap = {
     NID_id_aes128_wrap,
     8, 16, 8, WRAP_FLAGS,
     aes_wrap_init_key, aes_wrap_cipher,
-    NULL,
+    NULL, NULL,
     sizeof(EVP_AES_WRAP_CTX),
     NULL, NULL, NULL, NULL
 };
@@ -2591,7 +2591,7 @@ static const EVP_CIPHER aes_192_wrap = {
     NID_id_aes192_wrap,
     8, 24, 8, WRAP_FLAGS,
     aes_wrap_init_key, aes_wrap_cipher,
-    NULL,
+    NULL, NULL,
     sizeof(EVP_AES_WRAP_CTX),
     NULL, NULL, NULL, NULL
 };
@@ -2605,7 +2605,7 @@ static const EVP_CIPHER aes_256_wrap = {
     NID_id_aes256_wrap,
     8, 32, 8, WRAP_FLAGS,
     aes_wrap_init_key, aes_wrap_cipher,
-    NULL,
+    NULL, NULL,
     sizeof(EVP_AES_WRAP_CTX),
     NULL, NULL, NULL, NULL
 };
@@ -2619,7 +2619,7 @@ static const EVP_CIPHER aes_128_wrap_pad = {
     NID_id_aes128_wrap_pad,
     8, 16, 4, WRAP_FLAGS,
     aes_wrap_init_key, aes_wrap_cipher,
-    NULL,
+    NULL, NULL,
     sizeof(EVP_AES_WRAP_CTX),
     NULL, NULL, NULL, NULL
 };
@@ -2633,7 +2633,7 @@ static const EVP_CIPHER aes_192_wrap_pad = {
     NID_id_aes192_wrap_pad,
     8, 24, 4, WRAP_FLAGS,
     aes_wrap_init_key, aes_wrap_cipher,
-    NULL,
+    NULL, NULL,
     sizeof(EVP_AES_WRAP_CTX),
     NULL, NULL, NULL, NULL
 };
@@ -2647,7 +2647,7 @@ static const EVP_CIPHER aes_256_wrap_pad = {
     NID_id_aes256_wrap_pad,
     8, 32, 4, WRAP_FLAGS,
     aes_wrap_init_key, aes_wrap_cipher,
-    NULL,
+    NULL, NULL,
     sizeof(EVP_AES_WRAP_CTX),
     NULL, NULL, NULL, NULL
 };

@@ -133,6 +133,7 @@ static const EVP_CIPHER chacha20 = {
     chacha_init_key,
     chacha_cipher,
     NULL,
+    NULL,
     sizeof(EVP_CHACHA_KEY),
     NULL,
     NULL,
@@ -440,6 +441,7 @@ static EVP_CIPHER chacha20_poly1305 = {
     EVP_CIPH_CUSTOM_COPY | EVP_CIPH_FLAG_CUSTOM_CIPHER,
     chacha20_poly1305_init_key,
     chacha20_poly1305_cipher,
+    NULL,
     chacha20_poly1305_cleanup,
     0,          /* 0 moves context-specific structure allocation to ctrl */
     NULL,       /* set_asn1_parameters */
