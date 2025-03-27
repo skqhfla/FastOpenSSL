@@ -1811,12 +1811,14 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystruct))
                         return -1;
 
+                    /*
                     bulk = AES_gcm_encrypt(in + res,
                                            out + res, len - res,
                                            gctx->gcm.key, gctx->gcm.Yi.c,
                                            gctx->gcm.Xi.u);
                     gctx->gcm.len.u[1] += bulk;
                     bulk += res;
+                    */
                 }
 #endif
                 if (borim_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
@@ -1941,6 +1943,7 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 		    // JINHO: Encrypt #3
                     if (CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
                         return -1;
+                    /*
 
                     bulk = AES_gcm_encrypt(in + res,
                                            out + res, len - res,
@@ -1948,6 +1951,7 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                            gctx->gcm.Xi.u);
                     gctx->gcm.len.u[1] += bulk;
                     bulk += res;
+                */
                 }
 #endif
                 if (CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,

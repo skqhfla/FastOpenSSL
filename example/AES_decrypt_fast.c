@@ -10,7 +10,7 @@
 #include <time.h>
 #include <sys/stat.h>
 
-#define BUFFER_SIZE 256 // Circular buffer 크기
+#define BUFFER_SIZE 1024 // Circular buffer 크기
 #define IV_LENGTH 12
 #define KEY_LENGTH 32
 #define AES_GCM_BLOCK_SIZE 16 // Keystream 블록 크기

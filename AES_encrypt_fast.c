@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
 
 
     // AES-GCM 모드 설정
-    printf("Encrypt IV: %s\n", iv);
+
     if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");

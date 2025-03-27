@@ -2,12 +2,20 @@
 
 echo "### Fast OpenSSL"
 echo "ENCRYPT"
-./AES_encrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 2>enc_iv.txt
+./AES_encrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 0ee5c8893a86718f5a0d9852 2> fast_enc.log
 echo
 
 echo "DECRYPT"
-./AES_decrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 2>dec_iv.txt
+./AES_decrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61
 echo 
 
 
+echo "### Original OpenSSL"
+echo "ENCRYPT"
+./AES_encrypt e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 0ee5c8893a86718f5a0d9852
+echo
+
+echo "DECRYPT"
+./AES_decrypt e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61
+echo 
 

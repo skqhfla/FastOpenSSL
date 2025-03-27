@@ -1185,7 +1185,7 @@ int jinho_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 	ctx->Yi.d[3] = ctr;
     return 0;
 }
-#define borim_BUFFER_SIZE 256
+#define borim_BUFFER_SIZE 1024
 #define borim_AES_GCM_BLOCK_SIZE 16
 
 typedef struct
@@ -1204,7 +1204,7 @@ void borim_processKeystream(void *keystruct, GCM128_CONTEXT *ctx) {
             int tail_index = atomic_load(&keybuffer->tail);
 
             if (head_index == tail_index) {
-                usleep(1);
+                usleep(100);
                 continue;
             }
 
@@ -1608,6 +1608,7 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
             return 0;
         }
     }
+    /*
 # if defined(GHASH) && defined(GHASH_CHUNK)
     while (len >= GHASH_CHUNK) {
         (*stream) (in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
@@ -1626,6 +1627,8 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         len -= GHASH_CHUNK;
     }
 # endif
+*/
+    /*
     if ((i = (len & (size_t)-16))) {
         size_t j = i / 16;
 
@@ -1653,6 +1656,32 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         }
 # endif
     }
+    */
+    if ((i = (len & (size_t)-16))) {
+        size_t j = len / 16;
+
+        for(int k = 0; k < j; k++){
+            (*ctx->block) (ctx->Yi.c, ctx->EKi.c, key);
+            ++ctr;
+            if (is_endian.little)
+# ifdef BSWAP4
+                ctx->Yi.d[3] = BSWAP4(ctr);
+# else
+            PUTU32(ctx->Yi.c + 12, ctr);
+# endif
+            else
+                ctx->Yi.d[3] = ctr;
+
+            for(int a = 0; a < 16; a++){
+                ctx->Xi.c[a] ^= out[a] = in[a] ^ ctx->EKi.c[a];
+            } 
+            GCM_MUL(ctx, Xi);
+            len -= 16;
+            out += 16;
+            in += 16;
+        }
+
+        }
     if (len) {
         (*ctx->block) (ctx->Yi.c, ctx->EKi.c, key);
         ++ctr;
@@ -1660,7 +1689,7 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 # ifdef BSWAP4
             ctx->Yi.d[3] = BSWAP4(ctr);
 # else
-            PUTU32(ctx->Yi.c + 12, ctr);
+        PUTU32(ctx->Yi.c + 12, ctr);
 # endif
         else
             ctx->Yi.d[3] = ctr;
@@ -1669,7 +1698,6 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
             ++n;
         }
     }
-
     ctx->mres = n;
     return 0;
 #endif
@@ -1747,13 +1775,11 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
     }
 
     n = ctx->mres;
-    cnt = 0;
     if (n) {
         while (n && len) {
             ctx->Xi.c[n] ^= *(out++) = *(in++) ^ ctx->EKi.c[n];
             --len;
             n = (n + 1) % 16;
-	    cnt++;
         }
         if (n == 0)
             GCM_MUL(ctx, Xi);
@@ -1762,8 +1788,8 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
             return 0;
         }
     }
+    /*
 # if defined(GHASH) && defined(GHASH_CHUNK)
-    fprintf(stdout, "INNER CHUNK\n");
     while (len >= GHASH_CHUNK) {
 	    (*stream) (in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
 	    ctr += GHASH_CHUNK / 16;
@@ -1781,30 +1807,28 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 	    len -= GHASH_CHUNK;
     }
 # endif
-
+*/
 
     if ((i = (len & (size_t)-16))) {
         size_t j = i / 16;
 
-	// org: Stream function 
-	for(int k = 0; k < j; k++) {
-		borim_processKeystream(keystruct, ctx);
-		for(int a = 0; a < 16; a++)
-			ctx->Xi.c[a] ^= out[a] = in[a] ^ ctx->EKi.c[a];
-		in += 16;
-		len -= 16;
-		GCM_MUL(ctx, Xi);
-		out +=16;
-	}
+        // org: Stream function 
+        for(int k = 0; k < j; k++) {
+            borim_processKeystream(keystruct, ctx);
+            for(int a = 0; a < 16; a++)
+                ctx->Xi.c[a] ^= out[a] = in[a] ^ ctx->EKi.c[a];
+            in += 16;
+            len -= 16;
+            GCM_MUL(ctx, Xi);
+            out +=16;
+        }
     }
     if (len) {
 	borim_processKeystream(keystruct, ctx);
 
-	cnt = 0;
         while (len--) {
             ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
             ++n;
-	    cnt++;
         }
     }
 
