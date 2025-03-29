@@ -1,10 +1,13 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+
+#define READ_SIZE 8800
 
 const size_t KEY_LENGTH = 32;
 const size_t IV_LENGTH = 12;
@@ -118,7 +121,7 @@ int decrypt(FILE *in_file, FILE *out_file, const unsigned char *key, size_t auth
     while (current_pos < auth_tag_pos)
     {
         size_t in_nbytes_left = auth_tag_pos - current_pos;
-        size_t in_nbytes_wanted = in_nbytes_left < BUF_SIZE ? in_nbytes_left : BUF_SIZE;
+        size_t in_nbytes_wanted = in_nbytes_left < READ_SIZE ? in_nbytes_left : READ_SIZE;
 
         in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
         current_pos += in_nbytes;
@@ -126,6 +129,7 @@ int decrypt(FILE *in_file, FILE *out_file, const unsigned char *key, size_t auth
         int out_nbytes = 0;
         EVP_DecryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes);
         fwrite(out_buf, 1, out_nbytes, out_file);
+        usleep(10000);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);

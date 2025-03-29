@@ -15,6 +15,7 @@
 #define KEY_LENGTH 32
 #define AES_GCM_BLOCK_SIZE 16
 #define AUTH_TAG_LENGTH 16
+#define READ_SIZE 8800
 
 typedef struct
 {
@@ -54,7 +55,6 @@ void *keystream_generator_thread(void *arg)
         ks_buffer.tail = next_tail;
     }
 
-    printf("Keystream generator thread exiting...\n");
     return NULL;
 }
 
@@ -108,7 +108,7 @@ void *xor_encryption_thread(void *arg)
     clock_gettime(CLOCK_MONOTONIC, &start);
     while (current_pos < auth_tag_pos) {
         size_t in_nbytes_left = auth_tag_pos - current_pos;
-        size_t in_nbytes_wanted = in_nbytes_left < BUF_SIZE ? in_nbytes_left : BUF_SIZE;
+        size_t in_nbytes_wanted = in_nbytes_left < READ_SIZE ? in_nbytes_left : READ_SIZE;
 
         in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
         current_pos += in_nbytes;
@@ -116,6 +116,7 @@ void *xor_encryption_thread(void *arg)
         int out_nbytes = 0;
         borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
         fwrite(out_buf, 1, out_nbytes, out_file);
+        usleep(10000);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);

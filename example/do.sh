@@ -2,7 +2,7 @@
 
 echo "### Fast OpenSSL"
 echo "ENCRYPT"
-./AES_encrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 0ee5c8893a86718f5a0d9852 2> fast_enc.log
+./AES_encrypt_fast e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61 0ee5c8893a86718f5a0d9852
 echo
 
 echo "DECRYPT"

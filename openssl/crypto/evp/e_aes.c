@@ -1672,6 +1672,11 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
     if (!gctx->iv_set)
         return -1;
+
+    jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm, in, out, len);
+    
+    return 0;
+    /*
     if (in) {
         if (out == NULL) {
 	    // JINHO: Encrypt #2
@@ -1769,7 +1774,8 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
             }
         }
         return len;
-    } else {
+    } 
+                    else {
         if (!EVP_CIPHER_CTX_encrypting(ctx)) {
             if (gctx->taglen < 0)
                 return -1;
@@ -1782,11 +1788,12 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         }
         CRYPTO_gcm128_tag(&gctx->gcm, EVP_CIPHER_CTX_buf_noconst(ctx), 16);
         gctx->taglen = 16;
-        /* Don't reuse the IV */
         gctx->iv_set = 0;
+       
+
         return 0;
     }
-
+*/
 }
 
 // JINHO: Encrypt #2
@@ -1998,13 +2005,14 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
                     if (CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res))
                         return -1;
-
+                    /*
                     bulk = AES_gcm_decrypt(in + res,
                                            out + res, len - res,
                                            gctx->gcm.key,
                                            gctx->gcm.Yi.c, gctx->gcm.Xi.u);
                     gctx->gcm.len.u[1] += bulk;
                     bulk += res;
+                    */
                 }
 #endif
                 if (CRYPTO_gcm128_decrypt_ctr32(&gctx->gcm,
@@ -2020,13 +2028,14 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
                     if (CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res))
                         return -1;
-
+/*
                     bulk = AES_gcm_decrypt(in + res,
                                            out + res, len - res,
                                            gctx->gcm.key,
                                            gctx->gcm.Yi.c, gctx->gcm.Xi.u);
                     gctx->gcm.len.u[1] += bulk;
                     bulk += res;
+                    */
                 }
 #endif
                 if (CRYPTO_gcm128_decrypt(&gctx->gcm,

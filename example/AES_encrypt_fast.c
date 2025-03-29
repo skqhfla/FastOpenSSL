@@ -39,11 +39,9 @@ void *keystream_generator_thread(void *arg)
 {
     while (!stop_flag)
     {
-        fprintf(stderr, "Number of Key Stream: %d\n", ks_buffer.tail - ks_buffer.head);
         int next_tail = (ks_buffer.tail + 1) % BUFFER_SIZE;
         if (next_tail == ks_buffer.head)
         {
-            fprintf(stderr, "Key Stream buffer full\n");
             usleep(1000);
             continue;
         }
@@ -53,7 +51,6 @@ void *keystream_generator_thread(void *arg)
 
     }
 
-    printf("Keystream generator thread exiting...\n");
     return NULL;
 }
 

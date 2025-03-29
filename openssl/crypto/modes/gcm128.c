@@ -1896,6 +1896,7 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
             return 0;
         }
     }
+    /*
 # if defined(GHASH) && defined(GHASH_CHUNK)
     while (len >= GHASH_CHUNK) {
         GHASH(ctx, in, GHASH_CHUNK);
@@ -1914,6 +1915,8 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
         len -= GHASH_CHUNK;
     }
 # endif
+*/
+    /*
     if ((i = (len & (size_t)-16))) {
         size_t j = i / 16;
 
@@ -1944,6 +1947,35 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
         in += i;
         len -= i;
     }
+    */
+    if ((i = (len & (size_t)-16))) {
+        size_t j = len / 16;
+
+        for(int k = 0; k < j; k++){
+            (*ctx->block) (ctx->Yi.c, ctx->EKi.c, key);
+            ++ctr;
+            if (is_endian.little)
+# ifdef BSWAP4
+                ctx->Yi.d[3] = BSWAP4(ctr);
+# else
+            PUTU32(ctx->Yi.c + 12, ctr);
+# endif
+            else
+                ctx->Yi.d[3] = ctr;
+
+            for(int a = 0; a < 16; a++){
+                u8 c = in[a];
+                ctx->Xi.c[a] ^= c;
+                out[a] = c ^ ctx->EKi.c[a];
+
+            } 
+            GCM_MUL(ctx, Xi);
+            len -= 16;
+            out += 16;
+            in += 16;
+        }
+
+        }
     if (len) {
         (*ctx->block) (ctx->Yi.c, ctx->EKi.c, key);
         ++ctr;
@@ -1956,9 +1988,8 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
         else
             ctx->Yi.d[3] = ctr;
         while (len--) {
-            u8 c = in[n];
-            ctx->Xi.c[n] ^= c;
-            out[n] = c ^ ctx->EKi.c[n];
+
+            
             ++n;
         }
     }
