@@ -4,13 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define KEY_LENGTH 32
 #define IV_LENGTH 12
 #define AUTH_TAG_LENGTH 16
 #define LOOP_COUNT	50
 
-unsigned char * aes_iv[IV_LENGTH];
+unsigned char aes_iv[IV_LENGTH];
 
 int encrypt(FILE *out_file, const unsigned char *key, FILE* error_stream){
 	EVP_CIPHER_CTX *ctx = NULL;
@@ -95,7 +96,7 @@ int main(int argc, char **argv){
 	long decoded_key_len = 0;
 	key = OPENSSL_hexstr2buf(key_hex, &decoded_key_len);
 	if(!key || decoded_key_len != KEY_LENGTH){
-		fprintf(stderr, "Wrong key \"%s\", must be %lu hex digites\n", key_hex, KEY_LENGTH * 2);
+		fprintf(stderr, "Wrong key \"%s\", must be %u hex digites\n", key_hex, KEY_LENGTH * 2);
 		goto failure;
 	}
 
@@ -107,8 +108,8 @@ int main(int argc, char **argv){
 	memcpy(aes_iv, iv, IV_LENGTH);
 	OPENSSL_free(iv);
 
-	out_file = fopen("encrypt.out", "wb");
-	int err = encrypt(out_file, key, stderr);
+	out_file = fopen("encrypt.norm", "wb");
+	encrypt(out_file, key, stderr);
 
 failure:
 	exit_code = 1;
