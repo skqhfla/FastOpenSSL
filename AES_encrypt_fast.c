@@ -37,7 +37,7 @@ void aes_gcm_generate_keystream(unsigned char *keystream)
 {
     // TODO : AES_Encrypt 함수 호출 후 buffer에 저장하는 코드 필요.
     int len;
-    jinho_EVP_EncryptUpdate(ctx, keystream, &len, "A", 1, NULL);
+    jinho_EVP_EncryptUpdate(ctx, keystream, &len, "A", 1);
 }
 
 // Keystream 생성 스레드
@@ -92,7 +92,7 @@ void *xor_encryption_thread(void *arg)
         size_t in_nbytes = fread(in_buf, 1, BUF_SIZE, input_file);
 
         int out_nbytes = 0;
-        jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
+        borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
         fwrite(out_buf, 1, out_nbytes, out_file);
     }
     clock_gettime(CLOCK_MONOTONIC, &end);
@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
 
     // AES-GCM 모드 설정
 
-    if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
+    if (!jinho_EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

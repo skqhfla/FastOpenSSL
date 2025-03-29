@@ -38,6 +38,7 @@ static const EVP_CIPHER d_xcbc_cipher = {
     desx_cbc_cipher,
     NULL,
     NULL,
+    NULL,
     sizeof(DESX_CBC_KEY),
     EVP_CIPHER_set_asn1_iv,
     EVP_CIPHER_get_asn1_iv,

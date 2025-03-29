@@ -82,10 +82,20 @@ int EVP_CIPHER_meth_set_do_jinho(EVP_CIPHER *cipher,
                                   int (*do_jinho) (EVP_CIPHER_CTX *ctx,
                                                     unsigned char *out,
                                                     const unsigned char *in,
-                                                    size_t inl,
-						   void *keystruct))
+                                                    size_t inl))
 {
     cipher->do_jinho = do_jinho;
+    return 1;
+}
+
+int EVP_CIPHER_meth_set_do_borim(EVP_CIPHER *cipher,
+                                  int (*do_borim) (EVP_CIPHER_CTX *ctx,
+                                                    unsigned char *out,
+                                                    const unsigned char *in,
+                                                    size_t inl,
+                                                    void *keystruct))
+{
+    cipher->do_borim = do_borim;
     return 1;
 }
 

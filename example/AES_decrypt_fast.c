@@ -35,7 +35,7 @@ static const char *plaintext_file = "decrypt.fast";
 void aes_gcm_generate_keystream(unsigned char *keystream)
 {
     int len;
-    jinho_EVP_EncryptUpdate(ctx, keystream, &len, (const unsigned char *)"A", 1, NULL);
+    jinho_EVP_EncryptUpdate(ctx, keystream, &len, (const unsigned char *)"A", 1);
 }
 
 void *keystream_generator_thread(void *arg)
@@ -101,7 +101,6 @@ void *xor_encryption_thread(void *arg)
 
     int in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
     size_t current_pos = in_nbytes;
-    printf("Decrypt IV: %s\n", iv);
 
     struct timespec start, end;
     double elapsed_time;
@@ -115,7 +114,7 @@ void *xor_encryption_thread(void *arg)
         current_pos += in_nbytes;
 
         int out_nbytes = 0;
-        jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
+        borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
         fwrite(out_buf, 1, out_nbytes, out_file);
     }
 
@@ -204,7 +203,8 @@ int main(int argc, char *argv[])
 
     fclose(in_file);
 
-    if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
+    // AES-GCM 모드 설정
+    if (!jinho_EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

@@ -506,6 +506,7 @@ static const EVP_CIPHER aesni_##keylen##_##mode = { \
         aesni_init_key,                 \
         aesni_##mode##_cipher,          \
         NULL,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -515,6 +516,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_init_key,                   \
         aes_##mode##_cipher,            \
+        NULL,          \
         NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
@@ -530,6 +532,7 @@ static const EVP_CIPHER aesni_##keylen##_##mode = { \
         aesni_##mode##_init_key,        \
         aesni_##mode##_cipher,          \
         NULL,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -539,6 +542,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_##mode##_init_key,          \
         aes_##mode##_cipher,            \
+        NULL,          \
         NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
@@ -918,6 +922,7 @@ static const EVP_CIPHER aes_t4_##keylen##_##mode = { \
         aes_t4_init_key,                \
         aes_t4_##mode##_cipher,         \
         NULL,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -927,6 +932,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_init_key,                   \
         aes_##mode##_cipher,            \
+        NULL,          \
         NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
@@ -942,6 +948,7 @@ static const EVP_CIPHER aes_t4_##keylen##_##mode = { \
         aes_t4_##mode##_init_key,       \
         aes_t4_##mode##_cipher,         \
         NULL,          \
+        NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
         NULL,NULL,aes_##mode##_ctrl,NULL }; \
@@ -951,6 +958,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_##mode##_init_key,          \
         aes_##mode##_cipher,            \
+        NULL,          \
         NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
@@ -967,6 +975,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         aes_init_key,                   \
         aes_##mode##_cipher,            \
         NULL,          \
+        NULL,          \
         NULL,                           \
         sizeof(EVP_AES_KEY),            \
         NULL,NULL,NULL,NULL }; \
@@ -980,6 +989,7 @@ static const EVP_CIPHER aes_##keylen##_##mode = { \
         flags|EVP_CIPH_##MODE##_MODE,   \
         aes_##mode##_init_key,          \
         aes_##mode##_cipher,            \
+        NULL,          \
         NULL,          \
         aes_##mode##_cleanup,           \
         sizeof(EVP_AES_##MODE##_CTX),   \
@@ -1650,7 +1660,7 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 // JINHO: Encrypt #2
 int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-                          const unsigned char *in, size_t len, void *keystruct)
+                          const unsigned char *in, size_t len)
 {
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
     /* If not set up, return error */
@@ -1676,7 +1686,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystruct))
+                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1690,8 +1700,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 if (jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
-                                                len - bulk, gctx->ctr,
-						keystruct))
+                                                len - bulk, gctx->ctr))
                     return -1;
             } else {
                 size_t bulk = 0;

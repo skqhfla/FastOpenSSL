@@ -29,7 +29,7 @@ int main(int argc, char **argv)
         goto failure;
     }
 
-    const char *key_hex = argv[3];
+    const char *key_hex = argv[1];
 
     long decoded_key_len = 0;
     key = OPENSSL_hexstr2buf(key_hex, &decoded_key_len);

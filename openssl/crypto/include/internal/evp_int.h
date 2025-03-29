@@ -117,8 +117,10 @@ struct evp_cipher_st {
                       const unsigned char *in, size_t inl);
 
     int (*do_jinho) (EVP_CIPHER_CTX *ctx, unsigned char *out,
-                      const unsigned char *in, size_t inl, void *keystruct);
+                      const unsigned char *in, size_t inl);
 
+    int (*do_borim) (EVP_CIPHER_CTX *ctx, unsigned char *out,
+                      const unsigned char *in, size_t inl, void *keystruct);
     /* cleanup ctx */
     int (*cleanup) (EVP_CIPHER_CTX *);
     /* how big ctx->cipher_data needs to be */
@@ -229,6 +231,7 @@ static const EVP_CIPHER cname##_##mode = { \
         flags | EVP_CIPH_##MODE##_MODE, \
         init_key, \
         cname##_##mode##_cipher, \
+        NULL, \
         NULL, \
         cleanup, \
         sizeof(kstruct), \

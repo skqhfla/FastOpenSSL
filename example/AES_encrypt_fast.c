@@ -32,7 +32,7 @@ atomic_bool stop_flag = false;
 void aes_gcm_generate_keystream(unsigned char *keystream)
 {
     int len;
-    jinho_EVP_EncryptUpdate(ctx, keystream, &len, (const unsigned char *)"A", 1, NULL);
+    jinho_EVP_EncryptUpdate(ctx, keystream, &len, (const unsigned char *)"A", 1);
 }
 
 void *keystream_generator_thread(void *arg)
@@ -83,7 +83,7 @@ void *xor_encryption_thread(void *arg)
     for (int repeat = 0; repeat < LOOP_COUNT; repeat++)
     {
 	    int out_nbytes = 0;
-	    jinho_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, plaintext, plaintext_len, &ks_buffer);
+	    borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, plaintext, plaintext_len, &ks_buffer);
 
 	    fwrite(out_buf, 1, out_nbytes, out_file);
 	    usleep(10000); 
@@ -144,7 +144,8 @@ int main(int argc, char *argv[])
     memcpy(aes_iv, iv, IV_LENGTH);
     OPENSSL_free(iv);
 
-    if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
+    // AES-GCM 모드 설정
+    if (!jinho_EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

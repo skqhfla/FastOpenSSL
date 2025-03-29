@@ -1705,7 +1705,7 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 
 int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
                                 const unsigned char *in, unsigned char *out,
-                                size_t len, ctr128_f stream)
+                                size_t len)
 {
 #if defined(OPENSSL_SMALL_FOOTPRINT)
     return jinho_CRYPTO_gcm128_encrypt(ctx, in, out, len);
