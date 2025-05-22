@@ -4208,11 +4208,12 @@ jinho_aes_256_gcm                       4158	1_1_0	EXIST::FUNCTION:
 jinho_aes_gcm_cipher                    4159	1_1_0	EXIST::FUNCTION:
 borim_aes_256_gcm                       4160	1_1_0	EXIST::FUNCTION:
 borim_aes_gcm_cipher                    4161	1_1_0	EXIST::FUNCTION:
-jinho_EVP_EncryptInit_ex                4162	1_1_0	EXIST::FUNCTION:
-jinho_EVP_EncryptUpdate                 4163	1_1_0	EXIST::FUNCTION:
-OCSP_RESPID_set_by_name                 4164	1_1_0a	EXIST::FUNCTION:OCSP
-OCSP_RESPID_set_by_key                  4165	1_1_0a	EXIST::FUNCTION:OCSP
-OCSP_RESPID_match                       4166	1_1_0a	EXIST::FUNCTION:OCSP
+borim_EVP_EncryptUpdate                 4162	1_1_0	EXIST::FUNCTION:
+jinho_EVP_EncryptInit_ex                4163	1_1_0	EXIST::FUNCTION:
+jinho_EVP_EncryptUpdate                 4164	1_1_0	EXIST::FUNCTION:
+OCSP_RESPID_set_by_name                 4165	1_1_0a	EXIST::FUNCTION:OCSP
+OCSP_RESPID_set_by_key                  4166	1_1_0a	EXIST::FUNCTION:OCSP
+OCSP_RESPID_match                       4167	1_1_0a	EXIST::FUNCTION:OCSP
 DSO_pathbyaddr                          4170	1_1_0c	EXIST::FUNCTION:
 DSO_dsobyaddr                           4171	1_1_0c	EXIST::FUNCTION:
 CT_POLICY_EVAL_CTX_get_time             4172	1_1_0d	EXIST::FUNCTION:CT
