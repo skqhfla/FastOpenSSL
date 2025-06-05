@@ -1158,6 +1158,619 @@ $code.=<<___;
 .size	aesni_ccm64_decrypt_blocks,.-aesni_ccm64_decrypt_blocks
 ___
 }
+
+# Jinho Custom jinho_aesni_ctr32_encrypt_blocks (const void *in, void *out,
+#                                   size_t blocks, const AES_KEY *key,
+#                                   const char *ivec);
+#
+#
+# This function just compute key stream for AES_GCM key stream except plain text XOR key stream
+#
+#
+# JINHO
+# (*stream) (in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
+# %rdi: in (plain text) 
+# %rsi: out (cipher text)
+# %rdx block_count  
+# %rcx: Key 
+# %r8: IV  
+#
+# pxor xmm1, xmm2: xmm1 = xmm1 xor xmm2        (128 bit register)
+# xorps xmm1, xmm2: xmm1 = xmm1 xor xmm2       (float)
+# movups xmm1, [mem]: memory load or save
+# - memory load: movups xmm1, [rdi]
+# - memory save: [rdi], xmm1
+# leaq rax, [rax + 4]: move the address (not real move just compute and return)
+# subq $16, rsp: subtract (rsp -= 16)
+# andq %0xFFFF... %rsp: AND operation
+# pushq %rbp: Push to stack
+# movdqa xmm1, xmm2: move the data
+# bswapl %eax: reverse byte order (bit -> little/ little -> big endian)
+#
+
+{
+my ($in0,$in1,$in2,$in3,$in4,$in5)=map("%xmm$_",(10..15));
+my ($key0,$ctr)=("${key_}d","${ivp}d");
+my $frame_size = 0x80 + ($win64?160:0);
+
+$code.=<<___;
+.globl	jinho_aesni_ctr32_encrypt_blocks
+.type	jinho_aesni_ctr32_encrypt_blocks,\@function,5
+.align	16
+jinho_aesni_ctr32_encrypt_blocks:
+	cmp	\$1,$len
+	jne	.jinho_Lctr32_bulk
+
+	# handle single block without allocating stack frame,
+	# useful when handling edges
+	movups	($ivp),$inout0
+	movups	($inp),$inout1
+	mov	240($key),%edx			# key->rounds
+___
+	&aesni_generate1("enc",$key,"%edx");
+$code.=<<___;
+	 pxor	$rndkey0,$rndkey0		# clear register bank
+	 pxor	$rndkey1,$rndkey1
+     # xorps	$inout1,$inout0
+	 pxor	$inout1,$inout1
+	movups	$inout0,($out)
+	 xorps	$inout0,$inout0
+	jmp	.jinho_Lctr32_epilogue
+
+.align	16
+.jinho_Lctr32_bulk:
+	lea	(%rsp),%rax
+	push	%rbp
+	sub	\$$frame_size,%rsp
+	and	\$-16,%rsp	# Linux kernel stack can be incorrectly seeded
+___
+$code.=<<___ if ($win64);
+	movaps	%xmm6,-0xa8(%rax)		# offload everything
+	movaps	%xmm7,-0x98(%rax)
+	movaps	%xmm8,-0x88(%rax)
+	movaps	%xmm9,-0x78(%rax)
+	movaps	%xmm10,-0x68(%rax)
+	movaps	%xmm11,-0x58(%rax)
+	movaps	%xmm12,-0x48(%rax)
+	movaps	%xmm13,-0x38(%rax)
+	movaps	%xmm14,-0x28(%rax)
+	movaps	%xmm15,-0x18(%rax)
+.jinho_Lctr32_body:
+___
+$code.=<<___;
+	lea	-8(%rax),%rbp
+
+	# 8 16-byte words on top of stack are counter values
+	# xor-ed with zero-round key
+
+	movdqu	($ivp),$inout0
+	movdqu	($key),$rndkey0
+	mov	12($ivp),$ctr			# counter LSB
+	pxor	$rndkey0,$inout0
+	mov	12($key),$key0			# 0-round key LSB
+	movdqa	$inout0,0x00(%rsp)		# populate counter block
+	bswap	$ctr
+	movdqa	$inout0,$inout1
+	movdqa	$inout0,$inout2
+	movdqa	$inout0,$inout3
+	movdqa	$inout0,0x40(%rsp)
+	movdqa	$inout0,0x50(%rsp)
+	movdqa	$inout0,0x60(%rsp)
+	mov	%rdx,%r10			# about to borrow %rdx
+	movdqa	$inout0,0x70(%rsp)
+
+	lea	1($ctr),%rax
+	 lea	2($ctr),%rdx
+	bswap	%eax
+	 bswap	%edx
+	xor	$key0,%eax
+	 xor	$key0,%edx
+	pinsrd	\$3,%eax,$inout1
+	lea	3($ctr),%rax
+	movdqa	$inout1,0x10(%rsp)
+	 pinsrd	\$3,%edx,$inout2
+	bswap	%eax
+	 mov	%r10,%rdx			# restore %rdx
+	 lea	4($ctr),%r10
+	 movdqa	$inout2,0x20(%rsp)
+	xor	$key0,%eax
+	 bswap	%r10d
+	pinsrd	\$3,%eax,$inout3
+	 xor	$key0,%r10d
+	movdqa	$inout3,0x30(%rsp)
+	lea	5($ctr),%r9
+	 mov	%r10d,0x40+12(%rsp)
+	bswap	%r9d
+	 lea	6($ctr),%r10
+	mov	240($key),$rounds		# key->rounds
+	xor	$key0,%r9d
+	 bswap	%r10d
+	mov	%r9d,0x50+12(%rsp)
+	 xor	$key0,%r10d
+	lea	7($ctr),%r9
+	 mov	%r10d,0x60+12(%rsp)
+	bswap	%r9d
+	 mov	OPENSSL_ia32cap_P+4(%rip),%r10d 
+	xor	$key0,%r9d
+	 and	\$`1<<26|1<<22`,%r10d		# isolate XSAVE+MOVBE
+	mov	%r9d,0x70+12(%rsp)
+
+	$movkey	0x10($key),$rndkey1
+
+	movdqa	0x40(%rsp),$inout4
+	movdqa	0x50(%rsp),$inout5
+
+	cmp	\$8,$len		# $len is in blocks
+	jb	.jinho_Lctr32_tail		# short input if ($len<8)
+
+	sub	\$6,$len		# $len is biased by -6
+	cmp	\$`1<<22`,%r10d		# check for MOVBE without XSAVE
+	je	.jinho_Lctr32_6x		# [which denotes Atom Silvermont]
+
+	lea	0x80($key),$key		# size optimization
+	sub	\$2,$len		# $len is biased by -8
+	jmp	.jinho_Lctr32_loop8
+
+.align	16
+.jinho_Lctr32_6x:
+	shl	\$4,$rounds
+	mov	\$48,$rnds_
+	bswap	$key0
+	lea	32($key,$rounds),$key	# end of key schedule
+	sub	%rax,%r10		# twisted $rounds
+	jmp	.jinho_Lctr32_loop6
+
+.align	16
+.jinho_Lctr32_loop6:
+	 add	\$6,$ctr		# next counter value
+	$movkey	-48($key,$rnds_),$rndkey0
+	aesenc	$rndkey1,$inout0
+	 mov	$ctr,%eax
+	 xor	$key0,%eax
+	aesenc	$rndkey1,$inout1
+	 movbe	%eax,`0x00+12`(%rsp)	# store next counter value
+	 lea	1($ctr),%eax
+	aesenc	$rndkey1,$inout2
+	 xor	$key0,%eax
+	 movbe	%eax,`0x10+12`(%rsp)
+	aesenc	$rndkey1,$inout3
+	 lea	2($ctr),%eax
+	 xor	$key0,%eax
+	aesenc	$rndkey1,$inout4
+	 movbe	%eax,`0x20+12`(%rsp)
+	 lea	3($ctr),%eax
+	aesenc	$rndkey1,$inout5
+	$movkey	-32($key,$rnds_),$rndkey1
+	 xor	$key0,%eax
+
+	aesenc	$rndkey0,$inout0
+	 movbe	%eax,`0x30+12`(%rsp)
+	 lea	4($ctr),%eax
+	aesenc	$rndkey0,$inout1
+	 xor	$key0,%eax
+	 movbe	%eax,`0x40+12`(%rsp)
+	aesenc	$rndkey0,$inout2
+	 lea	5($ctr),%eax
+	 xor	$key0,%eax
+	aesenc	$rndkey0,$inout3
+	 movbe	%eax,`0x50+12`(%rsp)
+	 mov	%r10,%rax		# mov	$rnds_,$rounds
+	aesenc	$rndkey0,$inout4
+	aesenc	$rndkey0,$inout5
+	$movkey	-16($key,$rnds_),$rndkey0
+
+	call	.Lenc_loop6
+
+    # movdqu	($inp),$inout6		# load 6 input blocks
+	# movdqu	0x10($inp),$inout7
+	# movdqu	0x20($inp),$in0
+	# movdqu	0x30($inp),$in1
+	# movdqu	0x40($inp),$in2
+	# movdqu	0x50($inp),$in3
+	# lea	0x60($inp),$inp		# $inp+=6*16
+	# $movkey	-64($key,$rnds_),$rndkey1
+	# pxor	$inout0,$inout6		# inp^=E(ctr)
+	# movaps	0x00(%rsp),$inout0	# load next counter [xor-ed with 0 round]
+	# pxor	$inout1,$inout7
+	# movaps	0x10(%rsp),$inout1
+	# pxor	$inout2,$in0
+	# movaps	0x20(%rsp),$inout2
+	# pxor	$inout3,$in1
+	# movaps	0x30(%rsp),$inout3
+	# pxor	$inout4,$in2
+	# movaps	0x40(%rsp),$inout4
+	# pxor	$inout5,$in3
+	# movaps	0x50(%rsp),$inout5
+	# movdqu	$inout6,($out)		# store 6 output blocks
+	# movdqu	$inout7,0x10($out)
+	# movdqu	$in0,0x20($out)
+	# movdqu	$in1,0x30($out)
+	# movdqu	$in2,0x40($out)
+	# movdqu	$in3,0x50($out)
+	# lea	0x60($out),$out		# $out+=6*16
+
+    movdqu	$inout0,($out)		# store 6 output blocks
+	movdqu	$inout1,0x10($out)
+	movdqu	$inout2,0x20($out)
+	movdqu	$inout3,0x30($out)
+	movdqu	$inout4,0x40($out)
+	movdqu	$inout5,0x50($out)
+	lea	0x60($out),$out		# $out+=6*16
+
+
+	sub	\$6,$len
+	jnc	.jinho_Lctr32_loop6		# loop if $len-=6 didn't borrow
+
+	add	\$6,$len		# restore real remaining $len
+	jz	.jinho_Lctr32_done		# done if ($len==0)
+
+	lea	-48($rnds_),$rounds
+	lea	-80($key,$rnds_),$key	# restore $key
+	neg	$rounds
+	shr	\$4,$rounds		# restore $rounds
+	jmp	.jinho_Lctr32_tail
+
+.align	32
+.jinho_Lctr32_loop8:
+	 add		\$8,$ctr		# next counter value
+	movdqa		0x60(%rsp),$inout6
+	aesenc		$rndkey1,$inout0
+	 mov		$ctr,%r9d
+	movdqa		0x70(%rsp),$inout7
+	aesenc		$rndkey1,$inout1
+	 bswap		%r9d
+	$movkey		0x20-0x80($key),$rndkey0
+	aesenc		$rndkey1,$inout2
+	 xor		$key0,%r9d
+	 nop
+	aesenc		$rndkey1,$inout3
+	 mov		%r9d,0x00+12(%rsp)	# store next counter value
+	 lea		1($ctr),%r9
+	aesenc		$rndkey1,$inout4
+	aesenc		$rndkey1,$inout5
+	aesenc		$rndkey1,$inout6
+	aesenc		$rndkey1,$inout7
+	$movkey		0x30-0x80($key),$rndkey1
+___
+for($i=2;$i<8;$i++) {
+my $rndkeyx = ($i&1)?$rndkey1:$rndkey0;
+$code.=<<___;
+	 bswap		%r9d
+	aesenc		$rndkeyx,$inout0
+	aesenc		$rndkeyx,$inout1
+	 xor		$key0,%r9d
+	 .byte		0x66,0x90
+	aesenc		$rndkeyx,$inout2
+	aesenc		$rndkeyx,$inout3
+	 mov		%r9d,`0x10*($i-1)`+12(%rsp)
+	 lea		$i($ctr),%r9
+	aesenc		$rndkeyx,$inout4
+	aesenc		$rndkeyx,$inout5
+	aesenc		$rndkeyx,$inout6
+	aesenc		$rndkeyx,$inout7
+	$movkey		`0x20+0x10*$i`-0x80($key),$rndkeyx
+___
+}
+$code.=<<___;
+	 bswap		%r9d
+	aesenc		$rndkey0,$inout0
+	aesenc		$rndkey0,$inout1
+	aesenc		$rndkey0,$inout2
+	 xor		$key0,%r9d
+	 movdqu		0x00($inp),$in0		# start loading input
+	aesenc		$rndkey0,$inout3
+	 mov		%r9d,0x70+12(%rsp)
+	 cmp		\$11,$rounds
+	aesenc		$rndkey0,$inout4
+	aesenc		$rndkey0,$inout5
+	aesenc		$rndkey0,$inout6
+	aesenc		$rndkey0,$inout7
+	$movkey		0xa0-0x80($key),$rndkey0
+
+	jb		.jinho_Lctr32_enc_done
+
+	aesenc		$rndkey1,$inout0
+	aesenc		$rndkey1,$inout1
+	aesenc		$rndkey1,$inout2
+	aesenc		$rndkey1,$inout3
+	aesenc		$rndkey1,$inout4
+	aesenc		$rndkey1,$inout5
+	aesenc		$rndkey1,$inout6
+	aesenc		$rndkey1,$inout7
+	$movkey		0xb0-0x80($key),$rndkey1
+
+	aesenc		$rndkey0,$inout0
+	aesenc		$rndkey0,$inout1
+	aesenc		$rndkey0,$inout2
+	aesenc		$rndkey0,$inout3
+	aesenc		$rndkey0,$inout4
+	aesenc		$rndkey0,$inout5
+	aesenc		$rndkey0,$inout6
+	aesenc		$rndkey0,$inout7
+	$movkey		0xc0-0x80($key),$rndkey0
+	je		.jinho_Lctr32_enc_done
+
+	aesenc		$rndkey1,$inout0
+	aesenc		$rndkey1,$inout1
+	aesenc		$rndkey1,$inout2
+	aesenc		$rndkey1,$inout3
+	aesenc		$rndkey1,$inout4
+	aesenc		$rndkey1,$inout5
+	aesenc		$rndkey1,$inout6
+	aesenc		$rndkey1,$inout7
+	$movkey		0xd0-0x80($key),$rndkey1
+
+	aesenc		$rndkey0,$inout0
+	aesenc		$rndkey0,$inout1
+	aesenc		$rndkey0,$inout2
+	aesenc		$rndkey0,$inout3
+	aesenc		$rndkey0,$inout4
+	aesenc		$rndkey0,$inout5
+	aesenc		$rndkey0,$inout6
+	aesenc		$rndkey0,$inout7
+	$movkey		0xe0-0x80($key),$rndkey0
+	jmp		.jinho_Lctr32_enc_done
+
+.align	16
+.jinho_Lctr32_enc_done:
+	movdqu		0x10($inp),$in1
+	pxor		$rndkey0,$in0		# input^=round[last]
+	movdqu		0x20($inp),$in2
+	pxor		$rndkey0,$in1
+	movdqu		0x30($inp),$in3
+	pxor		$rndkey0,$in2
+	movdqu		0x40($inp),$in4
+	pxor		$rndkey0,$in3
+	movdqu		0x50($inp),$in5
+	pxor		$rndkey0,$in4
+	pxor		$rndkey0,$in5
+	aesenc		$rndkey1,$inout0
+	aesenc		$rndkey1,$inout1
+	aesenc		$rndkey1,$inout2
+	aesenc		$rndkey1,$inout3
+	aesenc		$rndkey1,$inout4
+	aesenc		$rndkey1,$inout5
+	aesenc		$rndkey1,$inout6
+	aesenc		$rndkey1,$inout7
+	movdqu		0x60($inp),$rndkey1	# borrow $rndkey1 for inp[6]
+	lea		0x80($inp),$inp		# $inp+=8*16
+
+	aesenclast	$in0,$inout0		# $inN is inp[N]^round[last]
+	pxor		$rndkey0,$rndkey1	# borrowed $rndkey
+	movdqu		0x70-0x80($inp),$in0
+	aesenclast	$in1,$inout1
+	pxor		$rndkey0,$in0
+	movdqa		0x00(%rsp),$in1		# load next counter block
+	aesenclast	$in2,$inout2
+	aesenclast	$in3,$inout3
+	movdqa		0x10(%rsp),$in2
+	movdqa		0x20(%rsp),$in3
+	aesenclast	$in4,$inout4
+	aesenclast	$in5,$inout5
+	movdqa		0x30(%rsp),$in4
+	movdqa		0x40(%rsp),$in5
+	aesenclast	$rndkey1,$inout6
+	movdqa		0x50(%rsp),$rndkey0
+	$movkey		0x10-0x80($key),$rndkey1#real 1st-round key
+	aesenclast	$in0,$inout7
+
+    # JINHO: ?
+	movups		$inout0,($out)		# store 8 output blocks
+	movdqa		$in1,$inout0
+	movups		$inout1,0x10($out)
+	movdqa		$in2,$inout1
+	movups		$inout2,0x20($out)
+	movdqa		$in3,$inout2
+	movups		$inout3,0x30($out)
+	movdqa		$in4,$inout3
+	movups		$inout4,0x40($out)
+	movdqa		$in5,$inout4
+	movups		$inout5,0x50($out)
+	movdqa		$rndkey0,$inout5
+	movups		$inout6,0x60($out)
+	movups		$inout7,0x70($out)
+	lea		0x80($out),$out		# $out+=8*16
+
+	sub	\$8,$len
+	jnc	.jinho_Lctr32_loop8			# loop if $len-=8 didn't borrow
+
+	add	\$8,$len			# restore real remainig $len
+	jz	.jinho_Lctr32_done			# done if ($len==0)
+	lea	-0x80($key),$key
+
+.jinho_Lctr32_tail:
+	# note that at this point $inout0..5 are populated with
+	# counter values xor-ed with 0-round key 
+	lea	16($key),$key
+	cmp	\$4,$len
+	jb	.jinho_Lctr32_loop3
+	je	.jinho_Lctr32_loop4
+
+	# if ($len>4) compute 7 E(counter)
+	shl		\$4,$rounds
+	movdqa		0x60(%rsp),$inout6
+	pxor		$inout7,$inout7
+
+	$movkey		16($key),$rndkey0
+	aesenc		$rndkey1,$inout0
+	aesenc		$rndkey1,$inout1
+	lea		32-16($key,$rounds),$key# prepare for .Lenc_loop8_enter
+	neg		%rax
+	aesenc		$rndkey1,$inout2
+	add		\$16,%rax		# prepare for .Lenc_loop8_enter
+	 movups		($inp),$in0
+	aesenc		$rndkey1,$inout3
+	aesenc		$rndkey1,$inout4
+	 movups		0x10($inp),$in1		# pre-load input
+	 movups		0x20($inp),$in2
+	aesenc		$rndkey1,$inout5
+	aesenc		$rndkey1,$inout6
+
+	call            .Lenc_loop8_enter
+
+    # movdqu	0x30($inp),$in3
+	# pxor	$in0,$inout0
+	# movdqu	0x40($inp),$in0
+	# pxor	$in1,$inout1
+	# movdqu	$inout0,($out)			# store output
+	# pxor	$in2,$inout2
+	# movdqu	$inout1,0x10($out)
+	# pxor	$in3,$inout3
+	# movdqu	$inout2,0x20($out)
+	# pxor	$in0,$inout4
+	# movdqu	$inout3,0x30($out)
+	# movdqu	$inout4,0x40($out)
+    
+	movdqu	$inout0,($out)
+	movdqu	$inout1,0x10($out)
+	movdqu	$inout2,0x20($out)
+	movdqu	$inout3,0x30($out)
+	movdqu	$inout4,0x40($out)
+   
+	cmp	\$6,$len
+	jb	.jinho_Lctr32_done			# $len was 5, stop store
+
+    # movups	0x50($inp),$in1
+	# xorps	$in1,$inout5
+	movups	$inout5,0x50($out)
+	je	.jinho_Lctr32_done			# $len was 6, stop store
+
+    # movups	0x60($inp),$in2
+	# xorps	$in2,$inout6
+	movups	$inout6,0x60($out)
+	jmp	.jinho_Lctr32_done			# $len was 7, stop store
+
+.align	32
+.jinho_Lctr32_loop4:
+	aesenc		$rndkey1,$inout0
+	lea		16($key),$key
+	dec		$rounds
+	aesenc		$rndkey1,$inout1
+	aesenc		$rndkey1,$inout2
+	aesenc		$rndkey1,$inout3
+	$movkey		($key),$rndkey1
+	jnz		.jinho_Lctr32_loop4
+	aesenclast	$rndkey1,$inout0
+	aesenclast	$rndkey1,$inout1
+	 movups		($inp),$in0		# load input
+	 movups		0x10($inp),$in1
+	aesenclast	$rndkey1,$inout2
+	aesenclast	$rndkey1,$inout3
+	 movups		0x20($inp),$in2
+	 movups		0x30($inp),$in3
+
+    # xorps	$in0,$inout0
+	# movups	$inout0,($out)			# store output
+	# xorps	$in1,$inout1
+	# movups	$inout1,0x10($out)
+	# pxor	$in2,$inout2
+	# movdqu	$inout2,0x20($out)
+	# pxor	$in3,$inout3
+	# movdqu	$inout3,0x30($out)
+
+	movdqu	$inout0,($out)
+	movdqu	$inout1,0x10($out)
+	movdqu	$inout2,0x20($out)
+	movdqu	$inout3,0x30($out)
+
+	jmp	.jinho_Lctr32_done			# $len was 4, stop store
+
+.align	32
+.jinho_Lctr32_loop3:
+	aesenc		$rndkey1,$inout0
+	lea		16($key),$key
+	dec		$rounds
+	aesenc		$rndkey1,$inout1
+	aesenc		$rndkey1,$inout2
+	$movkey		($key),$rndkey1
+	jnz		.jinho_Lctr32_loop3
+	aesenclast	$rndkey1,$inout0
+	aesenclast	$rndkey1,$inout1
+	aesenclast	$rndkey1,$inout2
+
+    # movups	($inp),$in0			# load input
+	# xorps	$in0,$inout0
+	movups	$inout0,($out)			# store output
+	cmp	\$2,$len
+	jb	.jinho_Lctr32_done			# $len was 1, stop store
+
+    # movups	0x10($inp),$in1
+	# xorps	$in1,$inout1
+	movups	$inout1,0x10($out)
+	je	.jinho_Lctr32_done			# $len was 2, stop store
+
+    # movups	0x20($inp),$in2
+	# xorps	$in2,$inout2
+	movups	$inout2,0x20($out)		# $len was 3, stop store
+
+.jinho_Lctr32_done:
+	xorps	%xmm0,%xmm0			# clear regiser bank
+	xor	$key0,$key0
+	pxor	%xmm1,%xmm1
+	pxor	%xmm2,%xmm2
+	pxor	%xmm3,%xmm3
+	pxor	%xmm4,%xmm4
+	pxor	%xmm5,%xmm5
+___
+$code.=<<___ if (!$win64);
+	pxor	%xmm6,%xmm6
+	pxor	%xmm7,%xmm7
+	movaps	%xmm0,0x00(%rsp)		# clear stack
+	pxor	%xmm8,%xmm8
+	movaps	%xmm0,0x10(%rsp)
+	pxor	%xmm9,%xmm9
+	movaps	%xmm0,0x20(%rsp)
+	pxor	%xmm10,%xmm10
+	movaps	%xmm0,0x30(%rsp)
+	pxor	%xmm11,%xmm11
+	movaps	%xmm0,0x40(%rsp)
+	pxor	%xmm12,%xmm12
+	movaps	%xmm0,0x50(%rsp)
+	pxor	%xmm13,%xmm13
+	movaps	%xmm0,0x60(%rsp)
+	pxor	%xmm14,%xmm14
+	movaps	%xmm0,0x70(%rsp)
+	pxor	%xmm15,%xmm15
+___
+$code.=<<___ if ($win64);
+	movaps	-0xa0(%rbp),%xmm6
+	movaps	%xmm0,-0xa0(%rbp)		# clear stack
+	movaps	-0x90(%rbp),%xmm7
+	movaps	%xmm0,-0x90(%rbp)
+	movaps	-0x80(%rbp),%xmm8
+	movaps	%xmm0,-0x80(%rbp)
+	movaps	-0x70(%rbp),%xmm9
+	movaps	%xmm0,-0x70(%rbp)
+	movaps	-0x60(%rbp),%xmm10
+	movaps	%xmm0,-0x60(%rbp)
+	movaps	-0x50(%rbp),%xmm11
+	movaps	%xmm0,-0x50(%rbp)
+	movaps	-0x40(%rbp),%xmm12
+	movaps	%xmm0,-0x40(%rbp)
+	movaps	-0x30(%rbp),%xmm13
+	movaps	%xmm0,-0x30(%rbp)
+	movaps	-0x20(%rbp),%xmm14
+	movaps	%xmm0,-0x20(%rbp)
+	movaps	-0x10(%rbp),%xmm15
+	movaps	%xmm0,-0x10(%rbp)
+	movaps	%xmm0,0x00(%rsp)
+	movaps	%xmm0,0x10(%rsp)
+	movaps	%xmm0,0x20(%rsp)
+	movaps	%xmm0,0x30(%rsp)
+	movaps	%xmm0,0x40(%rsp)
+	movaps	%xmm0,0x50(%rsp)
+	movaps	%xmm0,0x60(%rsp)
+	movaps	%xmm0,0x70(%rsp)
+___
+$code.=<<___;
+	lea	(%rbp),%rsp
+	pop	%rbp
+.jinho_Lctr32_epilogue:
+	ret
+.size	jinho_aesni_ctr32_encrypt_blocks,.-jinho_aesni_ctr32_encrypt_blocks
+___
+}
+
 ######################################################################
 # void aesni_ctr32_encrypt_blocks (const void *in, void *out,
 #                         size_t blocks, const AES_KEY *key,
@@ -1180,6 +1793,7 @@ $code.=<<___;
 .type	aesni_ctr32_encrypt_blocks,\@function,5
 .align	16
 aesni_ctr32_encrypt_blocks:
+    # Check block count 1
 	cmp	\$1,$len
 	jne	.Lctr32_bulk
 

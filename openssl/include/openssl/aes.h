@@ -32,6 +32,7 @@ struct aes_key_st {
 # ifdef AES_LONG
     unsigned long rd_key[4 * (AES_MAXNR + 1)];
 # else
+    // 14 Round, + 1 -> (14 + 1) * 4 * 4 = 240 
     unsigned int rd_key[4 * (AES_MAXNR + 1)];
 # endif
     int rounds;

@@ -29,26 +29,31 @@ unsigned char aes_iv[IV_LENGTH];
 EVP_CIPHER_CTX *ctx;            
 atomic_bool stop_flag = false; 
 
-void aes_gcm_generate_keystream(unsigned char *keystream)
+void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int buf_len)
 {
-    int len;
-    jinho_EVP_EncryptUpdate(ctx, keystream, &len, (const unsigned char *)"A", 1);
+    jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
 }
 
 void *keystream_generator_thread(void *arg)
 {
+    int block_cnt, buf_len;
     while (!stop_flag)
     {
-        int next_tail = (ks_buffer.tail + 1) % BUFFER_SIZE;
+        buf_len = BUFFER_SIZE - ks_buffer.tail - 1;
+        aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, buf_len);
+        // aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], kkk);
+        
+        if (buf_len == 0)
+            ks_buffer.tail = 0;
+        
+        int next_tail = (ks_buffer.tail + block_cnt) % BUFFER_SIZE;
         if (next_tail == ks_buffer.head)
         {
             usleep(1000);
             continue;
         }
 
-        aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
 	ks_buffer.tail = next_tail;
-
     }
 
     return NULL;
