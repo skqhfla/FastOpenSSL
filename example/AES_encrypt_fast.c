@@ -15,6 +15,7 @@
 #define AES_GCM_BLOCK_SIZE 16
 #define AUTH_TAG_LENGTH 16
 #define LOOP_COUNT	50
+#define CHUNK_SIZE  16
 
 typedef struct
 {
@@ -34,26 +35,36 @@ void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int bu
     jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
 }
 
+
+int CB_free_space(int head, int tail, int size) {
+    if (tail >= head)
+        return (size - 1) - (tail - head);
+    else
+        return head - tail - 1;
+}
+
 void *keystream_generator_thread(void *arg)
 {
     int block_cnt, buf_len;
     while (!stop_flag)
     {
-        buf_len = BUFFER_SIZE - ks_buffer.tail - 1;
-        aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, buf_len);
-        // aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], kkk);
-        
-        if (buf_len == 0)
-            ks_buffer.tail = 0;
-        
-        int next_tail = (ks_buffer.tail + block_cnt) % BUFFER_SIZE;
-        if (next_tail == ks_buffer.head)
-        {
-            usleep(1000);
+        int free_space = CB_free_space(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
+        if(free_space < CHUNK_SIZE) {
+            usleep(10);
             continue;
         }
 
-	ks_buffer.tail = next_tail;
+        int space_end = BUFFER_SIZE - ks_buffer.tail;
+        
+        if (space_end >= CHUNK_SIZE) {
+            aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, CHUNK_SIZE);
+        } else {
+            int tmp_len = BUFFER_SIZE - ks_buffer.tail;
+            aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, space_end);
+            aes_gcm_generate_keystream(ks_buffer.keystreams[0], &block_cnt, CHUNK_SIZE - space_end);
+        }
+
+        ks_buffer.tail = (ks_buffer.tail + CHUNK_SIZE) % BUFFER_SIZE;
     }
 
     return NULL;

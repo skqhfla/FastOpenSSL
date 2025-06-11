@@ -1175,6 +1175,17 @@ ___
 # %rcx: Key 
 # %r8: IV  
 #
+# $rounds="%eax";	# input to and changed by aesni_[en|de]cryptN !!!
+# $inp="%rdi";
+# $out="%rsi";
+# $len="%rdx";
+# $key="%rcx";	# input to and changed by aesni_[en|de]cryptN !!!
+# $ivp="%r8";	# cbc, ctr, ...
+# 
+# $rnds_="%r10d";	# backup copy for $rounds
+# $key_="%r11";	# backup copy for $key
+
+#
 # pxor xmm1, xmm2: xmm1 = xmm1 xor xmm2        (128 bit register)
 # xorps xmm1, xmm2: xmm1 = xmm1 xor xmm2       (float)
 # movups xmm1, [mem]: memory load or save
@@ -1211,7 +1222,7 @@ ___
 $code.=<<___;
 	 pxor	$rndkey0,$rndkey0		# clear register bank
 	 pxor	$rndkey1,$rndkey1
-     # xorps	$inout1,$inout0
+	 # xorps	$inout1,$inout0
 	 pxor	$inout1,$inout1
 	movups	$inout0,($out)
 	 xorps	$inout0,$inout0
@@ -1243,13 +1254,17 @@ $code.=<<___;
 	# 8 16-byte words on top of stack are counter values
 	# xor-ed with zero-round key
 
+  # inout0: Nonce + ctr
 	movdqu	($ivp),$inout0
+  # rndky0: Init key
 	movdqu	($key),$rndkey0
+  # ctr: counter (nonce + 12)
 	mov	12($ivp),$ctr			# counter LSB
 	pxor	$rndkey0,$inout0
 	mov	12($key),$key0			# 0-round key LSB
 	movdqa	$inout0,0x00(%rsp)		# populate counter block
 	bswap	$ctr
+  # Prepare parallelized (Increase each counter?)
 	movdqa	$inout0,$inout1
 	movdqa	$inout0,$inout2
 	movdqa	$inout0,$inout3
@@ -1361,35 +1376,7 @@ $code.=<<___;
 
 	call	.Lenc_loop6
 
-    # movdqu	($inp),$inout6		# load 6 input blocks
-	# movdqu	0x10($inp),$inout7
-	# movdqu	0x20($inp),$in0
-	# movdqu	0x30($inp),$in1
-	# movdqu	0x40($inp),$in2
-	# movdqu	0x50($inp),$in3
-	# lea	0x60($inp),$inp		# $inp+=6*16
-	# $movkey	-64($key,$rnds_),$rndkey1
-	# pxor	$inout0,$inout6		# inp^=E(ctr)
-	# movaps	0x00(%rsp),$inout0	# load next counter [xor-ed with 0 round]
-	# pxor	$inout1,$inout7
-	# movaps	0x10(%rsp),$inout1
-	# pxor	$inout2,$in0
-	# movaps	0x20(%rsp),$inout2
-	# pxor	$inout3,$in1
-	# movaps	0x30(%rsp),$inout3
-	# pxor	$inout4,$in2
-	# movaps	0x40(%rsp),$inout4
-	# pxor	$inout5,$in3
-	# movaps	0x50(%rsp),$inout5
-	# movdqu	$inout6,($out)		# store 6 output blocks
-	# movdqu	$inout7,0x10($out)
-	# movdqu	$in0,0x20($out)
-	# movdqu	$in1,0x30($out)
-	# movdqu	$in2,0x40($out)
-	# movdqu	$in3,0x50($out)
-	# lea	0x60($out),$out		# $out+=6*16
-
-    movdqu	$inout0,($out)		# store 6 output blocks
+	movdqu	$inout0,($out)		# store 6 output blocks
 	movdqu	$inout1,0x10($out)
 	movdqu	$inout2,0x20($out)
 	movdqu	$inout3,0x30($out)
@@ -1412,20 +1399,20 @@ $code.=<<___;
 
 .align	32
 .jinho_Lctr32_loop8:
-	 add		\$8,$ctr		# next counter value
+	add		\$8,$ctr		# next counter value
 	movdqa		0x60(%rsp),$inout6
 	aesenc		$rndkey1,$inout0
-	 mov		$ctr,%r9d
+	mov		$ctr,%r9d
 	movdqa		0x70(%rsp),$inout7
 	aesenc		$rndkey1,$inout1
-	 bswap		%r9d
+	bswap		%r9d
 	$movkey		0x20-0x80($key),$rndkey0
 	aesenc		$rndkey1,$inout2
-	 xor		$key0,%r9d
-	 nop
+	xor		$key0,%r9d
+	nop
 	aesenc		$rndkey1,$inout3
-	 mov		%r9d,0x00+12(%rsp)	# store next counter value
-	 lea		1($ctr),%r9
+	mov		%r9d,0x00+12(%rsp)	# store next counter value
+	lea		1($ctr),%r9
 	aesenc		$rndkey1,$inout4
 	aesenc		$rndkey1,$inout5
 	aesenc		$rndkey1,$inout6
@@ -1513,17 +1500,6 @@ $code.=<<___;
 
 .align	16
 .jinho_Lctr32_enc_done:
-	movdqu		0x10($inp),$in1
-	pxor		$rndkey0,$in0		# input^=round[last]
-	movdqu		0x20($inp),$in2
-	pxor		$rndkey0,$in1
-	movdqu		0x30($inp),$in3
-	pxor		$rndkey0,$in2
-	movdqu		0x40($inp),$in4
-	pxor		$rndkey0,$in3
-	movdqu		0x50($inp),$in5
-	pxor		$rndkey0,$in4
-	pxor		$rndkey0,$in5
 	aesenc		$rndkey1,$inout0
 	aesenc		$rndkey1,$inout1
 	aesenc		$rndkey1,$inout2
@@ -1531,46 +1507,34 @@ $code.=<<___;
 	aesenc		$rndkey1,$inout4
 	aesenc		$rndkey1,$inout5
 	aesenc		$rndkey1,$inout6
-	aesenc		$rndkey1,$inout7
-	movdqu		0x60($inp),$rndkey1	# borrow $rndkey1 for inp[6]
-	lea		0x80($inp),$inp		# $inp+=8*16
+	aesenc		$rndkey1,$inout7  
+	lea			0x80($inp),$inp		# $inp+=8*16
 
-	aesenclast	$in0,$inout0		# $inN is inp[N]^round[last]
-	pxor		$rndkey0,$rndkey1	# borrowed $rndkey
-	movdqu		0x70-0x80($inp),$in0
-	aesenclast	$in1,$inout1
-	pxor		$rndkey0,$in0
-	movdqa		0x00(%rsp),$in1		# load next counter block
-	aesenclast	$in2,$inout2
-	aesenclast	$in3,$inout3
-	movdqa		0x10(%rsp),$in2
-	movdqa		0x20(%rsp),$in3
-	aesenclast	$in4,$inout4
-	aesenclast	$in5,$inout5
-	movdqa		0x30(%rsp),$in4
-	movdqa		0x40(%rsp),$in5
-	aesenclast	$rndkey1,$inout6
-	movdqa		0x50(%rsp),$rndkey0
-	$movkey		0x10-0x80($key),$rndkey1#real 1st-round key
-	aesenclast	$in0,$inout7
+	aesenclast		$rndkey0,$inout0  
+	aesenclast		$rndkey0,$inout1  
+	aesenclast		$rndkey0,$inout2  
+	aesenclast		$rndkey0,$inout3  
+	aesenclast		$rndkey0,$inout4  
+	aesenclast		$rndkey0,$inout5  
+	aesenclast		$rndkey0,$inout6  
+	aesenclast		$rndkey0,$inout7  
+	$movkey			0x10-0x80($key),$rndkey1#real 1st-round key
 
-    # JINHO: ?
-	movups		$inout0,($out)		# store 8 output blocks
-	movdqa		$in1,$inout0
+	movups		$inout0,($out)
+	movdqa		0x00(%rsp),$inout0
 	movups		$inout1,0x10($out)
-	movdqa		$in2,$inout1
+	movdqa		0x10(%rsp),$inout1
 	movups		$inout2,0x20($out)
-	movdqa		$in3,$inout2
+	movdqa		0x20(%rsp),$inout2
 	movups		$inout3,0x30($out)
-	movdqa		$in4,$inout3
+	movdqa		0x30(%rsp),$inout3
 	movups		$inout4,0x40($out)
-	movdqa		$in5,$inout4
+	movdqa		0x40(%rsp),$inout4
 	movups		$inout5,0x50($out)
-	movdqa		$rndkey0,$inout5
+	movdqa		0x50(%rsp),$inout5
 	movups		$inout6,0x60($out)
 	movups		$inout7,0x70($out)
-	lea		0x80($out),$out		# $out+=8*16
-
+	lea			0x80($out),$out		# $out+=8*16
 	sub	\$8,$len
 	jnc	.jinho_Lctr32_loop8			# loop if $len-=8 didn't borrow
 
@@ -1608,34 +1572,21 @@ $code.=<<___;
 
 	call            .Lenc_loop8_enter
 
-    # movdqu	0x30($inp),$in3
-	# pxor	$in0,$inout0
-	# movdqu	0x40($inp),$in0
-	# pxor	$in1,$inout1
-	# movdqu	$inout0,($out)			# store output
-	# pxor	$in2,$inout2
-	# movdqu	$inout1,0x10($out)
-	# pxor	$in3,$inout3
-	# movdqu	$inout2,0x20($out)
-	# pxor	$in0,$inout4
-	# movdqu	$inout3,0x30($out)
-	# movdqu	$inout4,0x40($out)
-    
 	movdqu	$inout0,($out)
 	movdqu	$inout1,0x10($out)
 	movdqu	$inout2,0x20($out)
 	movdqu	$inout3,0x30($out)
 	movdqu	$inout4,0x40($out)
-   
+
 	cmp	\$6,$len
 	jb	.jinho_Lctr32_done			# $len was 5, stop store
 
-    # movups	0x50($inp),$in1
+	# movups	0x50($inp),$in1
 	# xorps	$in1,$inout5
 	movups	$inout5,0x50($out)
 	je	.jinho_Lctr32_done			# $len was 6, stop store
 
-    # movups	0x60($inp),$in2
+	# movups	0x60($inp),$in2
 	# xorps	$in2,$inout6
 	movups	$inout6,0x60($out)
 	jmp	.jinho_Lctr32_done			# $len was 7, stop store
@@ -1659,15 +1610,6 @@ $code.=<<___;
 	 movups		0x20($inp),$in2
 	 movups		0x30($inp),$in3
 
-    # xorps	$in0,$inout0
-	# movups	$inout0,($out)			# store output
-	# xorps	$in1,$inout1
-	# movups	$inout1,0x10($out)
-	# pxor	$in2,$inout2
-	# movdqu	$inout2,0x20($out)
-	# pxor	$in3,$inout3
-	# movdqu	$inout3,0x30($out)
-
 	movdqu	$inout0,($out)
 	movdqu	$inout1,0x10($out)
 	movdqu	$inout2,0x20($out)
@@ -1688,19 +1630,13 @@ $code.=<<___;
 	aesenclast	$rndkey1,$inout1
 	aesenclast	$rndkey1,$inout2
 
-    # movups	($inp),$in0			# load input
-	# xorps	$in0,$inout0
 	movups	$inout0,($out)			# store output
 	cmp	\$2,$len
 	jb	.jinho_Lctr32_done			# $len was 1, stop store
 
-    # movups	0x10($inp),$in1
-	# xorps	$in1,$inout1
 	movups	$inout1,0x10($out)
 	je	.jinho_Lctr32_done			# $len was 2, stop store
 
-    # movups	0x20($inp),$in2
-	# xorps	$in2,$inout2
 	movups	$inout2,0x20($out)		# $len was 3, stop store
 
 .jinho_Lctr32_done:
