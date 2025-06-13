@@ -826,14 +826,14 @@ void CRYPTO_gcm128_init(GCM128_CONTEXT *ctx, void *key, block128_f block)
 }
 
 // JINHO CUSTOM FUNCTION FOR DEBUG
-void print_keystream(unsigned char *keystream, int ctr_start, int len) {
+void print_keystream(FILE *out, unsigned char *keystream, int ctr_start, int len) {
   for (size_t i=0; i<len; i++) {
     unsigned ctr = ctr_start + i;
-    fprintf(stdout, "(CTR = %08d) ", ctr);
+    fprintf(out, "(CTR = %08d) ", ctr);
     for (size_t j=0; j<16; j++) {
-      fprintf(stdout, "%02x ", keystream[i * 16 + j]);
+      fprintf(out, "%02x ", keystream[i * 16 + j]);
     }
-    fprintf(stdout, "\n");
+    fprintf(out, "\n");
   }
 }
 
@@ -1199,6 +1199,7 @@ int jinho_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 }
 #define borim_BUFFER_SIZE 1024
 #define borim_AES_GCM_BLOCK_SIZE 16
+unsigned char generated_keystreams[borim_BUFFER_SIZE][borim_AES_GCM_BLOCK_SIZE];
 
 typedef struct
 {
@@ -1207,31 +1208,55 @@ typedef struct
     atomic_int tail;
 } CircularBuffer;
 
-int CB_size(CircularBuffer *cb) {
-  if (cb->tail >= cb->head) 
-    return cb->tail - cb->head;
-  else
-   return borim_BUFFER_SIZE - (cb->head - cb->tail);
+int CB_used(head, tail, buf_size) {
+    return (tail - head + buf_size) % buf_size;
 }
 
-void borim_processKeystream(void *keystruct, GCM128_CONTEXT *ctx) {
-    if (keystruct != NULL && ctx != NULL) {
+int borim_processKeystream(void *keystruct, unsigned char *buf, int len) {
+    int cnt = 0, res = len;
+    int head_index, item_len, tail_index;
+    if (keystruct != NULL && buf != NULL) {
         CircularBuffer *keybuffer = (CircularBuffer *)keystruct;
 
         while (1) {
-            int head_index = atomic_load(&keybuffer->head);
-            int tail_index = atomic_load(&keybuffer->tail);
-            if (CB_size(keybuffer) <= 0) {
+            item_len = CB_used(keybuffer->head, keybuffer->tail, borim_BUFFER_SIZE);
+
+            if (item_len <= 0) {
                 usleep(10);
                 continue;
+            } else {
+                /*
+                head_index = atomic_load(&keybuffer->head);
+                tail_index = atomic_load(&keybuffer->tail);
+                */
+                head_index = keybuffer->head;
+                tail_index = keybuffer->tail;
+                break;
             }
-
-            // fprintf(stderr, "[Borim] head: %d / tail: %d\n", head_index, tail_index);
-            memcpy(ctx->EKi.c, keybuffer->keystreams[head_index], borim_AES_GCM_BLOCK_SIZE);
-            atomic_store(&keybuffer->head, (head_index + 1) % borim_BUFFER_SIZE);
-            break;
         }
+
+        if (item_len < len) 
+            res = item_len;
+
+        int space_end = head_index + res;
+        if (space_end <= borim_BUFFER_SIZE) {
+            memcpy(buf, keybuffer->keystreams[head_index], borim_AES_GCM_BLOCK_SIZE * res);
+        } else {
+            int end = borim_BUFFER_SIZE - head_index;
+            int rest = (head_index + res) % borim_BUFFER_SIZE;
+
+            memcpy(buf, keybuffer->keystreams[head_index], borim_AES_GCM_BLOCK_SIZE * end);
+            memcpy(buf + (borim_AES_GCM_BLOCK_SIZE * end), keybuffer->keystreams[0], borim_AES_GCM_BLOCK_SIZE * rest);
+        }
+        
+        /*
+        atomic_store(&keybuffer->head, (head_index + res) % borim_BUFFER_SIZE);
+        */
+
+        keybuffer->head = (head_index + res) % borim_BUFFER_SIZE;
+        return res;
     }
+    return -1;
 }
 
 int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
@@ -1293,7 +1318,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
 		    
-    		    borim_processKeystream(keystruct, ctx);
+    		    borim_processKeystream(keystruct, ctx->EKi.c, 1);
 
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
                         out_t[i] = in_t[i] ^ ctx->EKi.t[i];
@@ -1316,7 +1341,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
 
-    		    borim_processKeystream(keystruct, ctx);
+    		    borim_processKeystream(keystruct, ctx->EKi.c, 1);
 
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
                         out_t[i] = in_t[i] ^ ctx->EKi.t[i];
@@ -1325,15 +1350,13 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                     len -= 16;
                 }
                 GHASH(ctx, out - j, j);
-
-		
             }
 # else
             while (len >= 16) {
                 size_t *out_t = (size_t *)out;
                 const size_t *in_t = (const size_t *)in;
 		
-    		borim_processKeystream(keystruct, ctx);
+    		borim_processKeystream(keystruct, ctxEKi.c, 1);
 
                 for (i = 0; i < 16 / sizeof(size_t); ++i)
                     ctx->Xi.t[i] ^= out_t[i] = in_t[i] ^ ctx->EKi.t[i];
@@ -1345,7 +1368,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 # endif
             if (len) {
 		    
-    		borim_processKeystream(keystruct, ctx);
+    		borim_processKeystream(keystruct, ctx->EKi.c, 1);
 
 		int cnt = 0;
                 while (len--) {
@@ -1363,7 +1386,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
     for (i = 0; i < len; ++i) {
 
 	if(n == 0){
-    	    borim_processKeystream(keystruct, ctx);
+    	    borim_processKeystream(keystruct, ctx->EKi.c, 1);
 	}
 
         ctx->Xi.c[n] ^= out[i] = in[i] ^ ctx->EKi.c[n];
@@ -1890,7 +1913,6 @@ int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 # if defined(GHASH) && defined(GHASH_CHUNK)
         (*stream) (in, out, 16, key, ctx->Yi.c);
         ctr += 16;
-        // print_keystream(out, ctr - 16, 16);
         if (is_endian.little)
 #  ifdef BSWAP4
         ctx->Yi.d[3] = BSWAP4(ctr);
@@ -1904,7 +1926,6 @@ int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         res = len % 16;
         (*stream) (in, out, res, key, ctx->Yi.c);
         ctr += res;
-        // print_keystream(out, ctr - res, res);
         if (is_endian.little)
 #  ifdef BSWAP4
         ctx->Yi.d[3] = BSWAP4(ctr);
@@ -2033,6 +2054,50 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
     }
 # endif
 */
+    int block_cnt = 0;
+    while (len >= 16) {
+        size_t cnt = len / 16;
+        block_cnt = borim_processKeystream(keystruct, generated_keystreams, cnt);
+        if (block_cnt == -1) 
+            return -1;
+        (*stream) (in, out, block_cnt, generated_keystreams, NULL);
+
+        GHASH(ctx, out, block_cnt * 16);
+        out += block_cnt * 16;
+        in += block_cnt * 16;
+	    len -= block_cnt * 16;
+    }
+    /*
+    if ((i = (len & (size_t)-16))) {
+        fprintf(stderr, "In 16 LEN: %d\n", len);
+        size_t j = i / 16;
+        int block_cnt = 0;
+        block_cnt = borim_processKeystream(keystruct, generated_keystreams, j);
+        fprintf(stderr, "[16 Block] Block cnt: %d\n", block_cnt);
+        if (block_cnt == -1)
+            return -1;
+        (*stream) (in, out, j, generated_keystreams, NULL);
+        GHASH(ctx, out, i);
+        out += block_cnt * 16;
+        in += block_cnt * 16;
+        len -= block_cnt * 16;
+
+    }
+    */
+    if (len) {
+        block_cnt = borim_processKeystream(keystruct, ctx->EKi.c, 1);
+        if (block_cnt == -1)
+            return -1;
+
+        while (len--) {
+            fprintf(stderr, "n: %d\n", n);
+            ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
+            ++n;
+        }
+    }
+
+
+#if 0
 
     if ((i = (len & (size_t)-16))) {
         size_t j = i / 16;
@@ -2057,6 +2122,7 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
             ++n;
         }
     }
+#endif
 
     ctx->mres = n;
     return 0;

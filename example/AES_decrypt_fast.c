@@ -40,34 +40,41 @@ void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int bu
     jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
 }
 
-int CB_free_space(int head, int tail, int size) {
-    if (tail >= head)
-        return (size - 1) - (tail - head);
-    else
-        return head - tail - 1;
+int CB_free_space(CircularBuffer cb) {
+    return (cb.head - cb.tail - 1 + BUFFER_SIZE) % BUFFER_SIZE;
 }
+
 
 void *keystream_generator_thread(void *arg)
 {
     int block_cnt, buf_len;
     while (!stop_flag)
     {
-        int free_space = CB_free_space(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
+        int free_space = CB_free_space(ks_buffer);
         if(free_space < CHUNK_SIZE) {
             usleep(10);
             continue;
         }
+        /*
+        int head_index = atomic_load(&ks_buffer.head);
+        int tail_index = atomic_load(&ks_buffer.tail);
+        */
+
+        int head_index = ks_buffer.head;
+        int tail_index = ks_buffer.tail;
 
         int space_end = BUFFER_SIZE - ks_buffer.tail;
-        
         if (space_end >= CHUNK_SIZE) {
-            aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, CHUNK_SIZE);
+            aes_gcm_generate_keystream(ks_buffer.keystreams[tail_index], &block_cnt, CHUNK_SIZE);
         } else {
             int tmp_len = BUFFER_SIZE - ks_buffer.tail;
-            aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, space_end);
+            aes_gcm_generate_keystream(ks_buffer.keystreams[tail_index], &block_cnt, space_end);
             aes_gcm_generate_keystream(ks_buffer.keystreams[0], &block_cnt, CHUNK_SIZE - space_end);
         }
 
+        /*
+        atomic_store(&ks_buffer.tail, (tail_index + CHUNK_SIZE) % BUFFER_SIZE);
+         */
         ks_buffer.tail = (ks_buffer.tail + CHUNK_SIZE) % BUFFER_SIZE;
     }
 
