@@ -36,33 +36,54 @@ void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int bu
 }
 
 
-int CB_free_space(int head, int tail, int size) {
-    if (tail >= head)
-        return (size - 1) - (tail - head);
-    else
-        return head - tail - 1;
+int CB_free_space(CircularBuffer cb) {
+    return (cb.head - cb.tail - 1 + BUFFER_SIZE) % BUFFER_SIZE;
 }
+
+void print_keystream(FILE *out, unsigned char *keystream, int ctr_start, int len) {
+  for (size_t i=0; i<len; i++) {
+    unsigned ctr = ctr_start + i;
+    fprintf(out, "(CTR = %08d) ", ctr);
+    for (size_t j=0; j<16; j++) {
+      fprintf(out, "%02x ", keystream[i * 16 + j]);
+    }
+    fprintf(out, "\n");
+  }
+}
+
 
 void *keystream_generator_thread(void *arg)
 {
     int block_cnt, buf_len;
     while (!stop_flag)
     {
-        int free_space = CB_free_space(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
+        // int free_space = CB_free_space(ks_buffer);
+        int free_space =  CB_free_space(ks_buffer);
         if(free_space < CHUNK_SIZE) {
             usleep(10);
             continue;
         }
 
-        int space_end = BUFFER_SIZE - ks_buffer.tail;
-        
+        /*
+        int head_index = atomic_load(&ks_buffer.head);
+        int tail_index = atomic_load(&ks_buffer.tail);
+        */
+
+        int head_index = ks_buffer.head;
+        int tail_index = ks_buffer.tail;
+
+        int space_end = BUFFER_SIZE - tail_index;
         if (space_end >= CHUNK_SIZE) {
-            aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, CHUNK_SIZE);
+            aes_gcm_generate_keystream(ks_buffer.keystreams[tail_index], &block_cnt, CHUNK_SIZE);
         } else {
             int tmp_len = BUFFER_SIZE - ks_buffer.tail;
-            aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail], &block_cnt, space_end);
+            aes_gcm_generate_keystream(ks_buffer.keystreams[tail_index], &block_cnt, space_end);
             aes_gcm_generate_keystream(ks_buffer.keystreams[0], &block_cnt, CHUNK_SIZE - space_end);
         }
+
+        /*
+        atomic_store(&ks_buffer.tail, (tail_index + CHUNK_SIZE) % BUFFER_SIZE);
+        */
 
         ks_buffer.tail = (ks_buffer.tail + CHUNK_SIZE) % BUFFER_SIZE;
     }

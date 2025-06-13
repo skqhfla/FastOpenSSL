@@ -207,6 +207,11 @@ void jinho_aesni_ctr32_encrypt_blocks(const unsigned char *in,
                                 size_t blocks,
                                 const void *key, const unsigned char *ivec);
 
+void borim_aesni_ctr32_encrypt_blocks(const unsigned char *in,
+                                unsigned char *out,
+                                size_t blocks,
+                                const unsigned char *keystream);
+
 void aesni_xts_encrypt(const unsigned char *in,
                        unsigned char *out,
                        size_t length,
@@ -1808,6 +1813,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                           const unsigned char *in, size_t len, void *keystruct)
 {
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
+    gctx->ctr = (ctr128_f) borim_aesni_ctr32_encrypt_blocks;
     /* If not set up, return error */
     if (!gctx->key_set)
         return -1;

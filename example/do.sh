@@ -19,3 +19,5 @@ echo "DECRYPT"
 ./AES_decrypt e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61
 echo 
 
+echo "Check diff encrypt.fast encrypt.norm"
+diff encrypt.fast encrypt.norm
