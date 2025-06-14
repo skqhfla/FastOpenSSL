@@ -1000,6 +1000,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                          const u8 *inp, size_t len) = ctx->ghash;
 # endif
 #endif
+    // fprintf(stdout, "CRYPTO_gcm128_encrypt\n\n");
 
     mlen += len;
     if (mlen > ((U64(1) << 36) - 32) || (sizeof(len) == 8 && mlen < len))
@@ -1197,7 +1198,7 @@ int jinho_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 	ctx->Yi.d[3] = ctr;
     return 0;
 }
-#define borim_BUFFER_SIZE 1024
+#define borim_BUFFER_SIZE 8192
 #define borim_AES_GCM_BLOCK_SIZE 16
 unsigned char generated_keystreams[borim_BUFFER_SIZE][borim_AES_GCM_BLOCK_SIZE];
 
@@ -1220,9 +1221,8 @@ int borim_processKeystream(void *keystruct, unsigned char *buf, int len) {
 
         while (1) {
             item_len = CB_used(keybuffer->head, keybuffer->tail, borim_BUFFER_SIZE);
-
             if (item_len <= 0) {
-                usleep(10);
+                usleep(100);
                 continue;
             } else {
                 /*
@@ -1252,7 +1252,6 @@ int borim_processKeystream(void *keystruct, unsigned char *buf, int len) {
         /*
         atomic_store(&keybuffer->head, (head_index + res) % borim_BUFFER_SIZE);
         */
-
         keybuffer->head = (head_index + res) % borim_BUFFER_SIZE;
         return res;
     }
@@ -1263,6 +1262,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                           const unsigned char *in, unsigned char *out,
                           size_t len, void *keystruct)
 {
+    // fprintf(stdout, "borim_CRYPTO_gcm128_encrypt\n\n");
     unsigned int n, ctr;
     size_t i;
     u64 mlen = ctx->len.u[1];
@@ -1317,9 +1317,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                 while (j) {
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
-		    
-    		    borim_processKeystream(keystruct, ctx->EKi.c, 1);
-
+                    borim_processKeystream(keystruct, ctx->EKi.c, 1);
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
                         out_t[i] = in_t[i] ^ ctx->EKi.t[i];
                     out += 16;
@@ -1367,15 +1365,16 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 	    }
 # endif
             if (len) {
-		    
-    		borim_processKeystream(keystruct, ctx->EKi.c, 1);
 
-		int cnt = 0;
+                borim_processKeystream(keystruct, ctx->EKi.c, 1);
+                
+                int cnt = 0;
                 while (len--) {
                     ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
                     ++n;
-		    cnt++;
+                    cnt++;
                 }
+
             }
 
             ctx->mres = n;
@@ -1752,6 +1751,7 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
                                 const unsigned char *in, unsigned char *out,
                                 size_t len, ctr128_f stream)
 {
+    // fprintf(stdout, "CRYPTO_gcm128_encrypt_ctr32\n\n");
 #if defined(OPENSSL_SMALL_FOOTPRINT)
     return CRYPTO_gcm128_encrypt(ctx, in, out, len);
 #else
@@ -1807,6 +1807,11 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
     }
 # if defined(GHASH) && defined(GHASH_CHUNK)
     while (len >= GHASH_CHUNK) {
+        /*
+        fprintf(stderr,"Plain Text\n");
+        print_keystream(stderr, in, 0, GHASH_CHUNK/16);
+        */
+
         (*stream) (in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
         ctr += GHASH_CHUNK / 16;
         if (is_endian.little)
@@ -1817,6 +1822,12 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 #  endif
         else
             ctx->Yi.d[3] = ctr;
+        /*
+        fprintf(stderr,"Cipher Text\n");
+        print_keystream(stderr, out, 0, GHASH_CHUNK/16);
+        fprintf(stderr, "\n");
+        */
+
         GHASH(ctx, out, GHASH_CHUNK);
         out += GHASH_CHUNK;
         in += GHASH_CHUNK;
@@ -1861,10 +1872,22 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 # endif
         else
             ctx->Yi.d[3] = ctr;
+        /*
+        fprintf(stdout,"Plain Text\n");
+        print_keystream(stdout, in, 0, 1);
+
+        fprintf(stdout,"Key Stream\n");
+        print_keystream(stdout, ctx->EKi.c, 0, 1);
+        */
         while (len--) {
             ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
             ++n;
         }
+        /*
+        fprintf(stdout,"Cipher Text\n");
+        print_keystream(stdout, out, 0, 1);
+        fprintf(stdout, "\n");
+        */
     }
 
     ctx->mres = n;
@@ -1990,6 +2013,7 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
                                 const unsigned char *in, unsigned char *out,
                                 size_t len, ctr128_f stream, void *keystruct)
 {
+    // fprintf(stdout, "borim_CRYPTO_gcm128_encrypt_ctr32\n\n");
 #if defined(OPENSSL_SMALL_FOOTPRINT)
     return borim_CRYPTO_gcm128_encrypt(ctx, in, out, len, keystruct);
 #else
@@ -2057,10 +2081,24 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
     int block_cnt = 0;
     while (len >= 16) {
         size_t cnt = len / 16;
+        
         block_cnt = borim_processKeystream(keystruct, generated_keystreams, cnt);
         if (block_cnt == -1) 
             return -1;
+        /*
+        fprintf(stdout,"Plain Text\n");
+        print_keystream(stdout, in, 0, block_cnt);
+
+        fprintf(stdout,"Key Stream\n");
+        print_keystream(stdout, generated_keystreams, 0, block_cnt);
+        */
+
         (*stream) (in, out, block_cnt, generated_keystreams, NULL);
+        /*
+        fprintf(stdout,"Cipher Text\n");
+        print_keystream(stdout, out, 0, block_cnt);
+        fprintf(stdout, "\n");
+        */
 
         GHASH(ctx, out, block_cnt * 16);
         out += block_cnt * 16;
@@ -2089,11 +2127,23 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         if (block_cnt == -1)
             return -1;
 
+        /*
+        fprintf(stdout,"Plain Text\n");
+        print_keystream(stdout, in, 0, 1);
+
+        fprintf(stdout,"Key Stream\n");
+        print_keystream(stdout, ctx->EKi.c, 0, 1);
+        */
         while (len--) {
-            fprintf(stderr, "n: %d\n", n);
             ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
             ++n;
         }
+
+        /*
+        fprintf(stdout,"Cipher Text\n");
+        print_keystream(stdout, out, 0, 1);
+        fprintf(stdout, "\n");
+        */
     }
 
 
