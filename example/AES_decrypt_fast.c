@@ -10,13 +10,7 @@
 #include <time.h>
 #include <sys/stat.h>
 
-#define BUFFER_SIZE 1024 
-#define IV_LENGTH 12
-#define KEY_LENGTH 32
-#define AES_GCM_BLOCK_SIZE 16
-#define AUTH_TAG_LENGTH 16
-#define READ_SIZE 8800
-#define CHUNK_SIZE 16
+#include "test_common.h"
 
 typedef struct
 {
@@ -31,10 +25,6 @@ unsigned char iv[IV_LENGTH];
 EVP_CIPHER_CTX *ctx;             
 atomic_bool stop_flag = false;
 
-static const char *ciphertext_file = "encrypt.fast";
-static const char *plaintext_file = "decrypt.fast";
-
-
 void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int buf_len)
 {
     jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
@@ -47,27 +37,24 @@ int CB_free_space(CircularBuffer cb) {
 
 void *keystream_generator_thread(void *arg)
 {
-    int block_cnt, buf_len;
+    int block_cnt;
     while (!stop_flag)
     {
         int free_space = CB_free_space(ks_buffer);
         if(free_space < CHUNK_SIZE) {
-            usleep(10);
+            usleep(WAIT_INTERVAL);
             continue;
         }
+
         /*
-        int head_index = atomic_load(&ks_buffer.head);
         int tail_index = atomic_load(&ks_buffer.tail);
         */
-
-        int head_index = ks_buffer.head;
         int tail_index = ks_buffer.tail;
 
         int space_end = BUFFER_SIZE - ks_buffer.tail;
         if (space_end >= CHUNK_SIZE) {
             aes_gcm_generate_keystream(ks_buffer.keystreams[tail_index], &block_cnt, CHUNK_SIZE);
         } else {
-            int tmp_len = BUFFER_SIZE - ks_buffer.tail;
             aes_gcm_generate_keystream(ks_buffer.keystreams[tail_index], &block_cnt, space_end);
             aes_gcm_generate_keystream(ks_buffer.keystreams[0], &block_cnt, CHUNK_SIZE - space_end);
         }
@@ -82,75 +69,48 @@ void *keystream_generator_thread(void *arg)
 }
 
 
-/*
- *void aes_gcm_generate_keystream(unsigned char *keystream)
-{
-    int len;
-    jinho_EVP_EncryptUpdate(ctx, keystream, &len, (const unsigned char *)"A", 1);
-}
-
-void *keystream_generator_thread(void *arg)
-{
-    while (!stop_flag)
-    {
-        int next_tail = (ks_buffer.tail + 1) % BUFFER_SIZE;
-        if (next_tail == ks_buffer.head)
-        {
-            usleep(10); 
-            continue;
-        }
-
-        aes_gcm_generate_keystream(ks_buffer.keystreams[ks_buffer.tail]);
-	
-        ks_buffer.tail = next_tail;
-    }
-
-    return NULL;
-}
-*/
-
 void *xor_encryption_thread(void *arg)
 {
     FILE *in_file = NULL;
     FILE *out_file = NULL;
 
     struct stat in_file_stat;
-    int err = stat(ciphertext_file, &in_file_stat);
+    int err = stat(FAST_ENC_FILE, &in_file_stat);
     if (err)
     {
-        fprintf(stderr, "Could not stat input file \"%s\"\n", ciphertext_file);
+        fprintf(stderr, "Could not stat input file \"%s\"\n", FAST_ENC_FILE);
         return NULL;
     }
 
     size_t in_file_size = in_file_stat.st_size;
     if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
     {
-        fprintf(stderr, "Input file \"%s\" is too short\n", ciphertext_file);
+        fprintf(stderr, "Input file \"%s\" is too short\n", FAST_ENC_FILE);
         return NULL;
     }
 
-    in_file = fopen(ciphertext_file, "rb");
+    in_file = fopen(FAST_ENC_FILE, "rb");
     if (!in_file)
     {
-        fprintf(stderr, "Could not open input file \"%s\"\n", ciphertext_file);
+        fprintf(stderr, "Could not open input file \"%s\"\n", FAST_ENC_FILE);
         return NULL;
     }
 
-    out_file = fopen(plaintext_file, "wb");
+    out_file = fopen(FAST_DEC_FILE, "wb");
     if (!out_file)
     {
-        fprintf(stderr, "Could not open output file \"%s\"\n", plaintext_file);
+        fprintf(stderr, "Could not open output file \"%s\"\n", FAST_DEC_FILE);
         return NULL;
     }
 
-    size_t auth_tag_pos = in_file_size - AUTH_TAG_LENGTH;
     unsigned char auth_tag[AUTH_TAG_LENGTH];
-    const size_t BLOCK_SIZE = 16;
-    const size_t BUF_SIZE = 64 * 1024;
-    unsigned char* in_buf  = malloc(BUF_SIZE);
-    unsigned char* out_buf = malloc(BUF_SIZE + BLOCK_SIZE);
+    unsigned char* in_buf  = malloc(P_BUFFER_SIZE);
+    unsigned char* out_buf = malloc(P_BUFFER_SIZE);
 
     int in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
+
+    size_t read_size = f_size(PLAINTEXT_FILE);
+    size_t auth_tag_pos = in_file_size - AUTH_TAG_LENGTH;
     size_t current_pos = in_nbytes;
 
     struct timespec start, end;
@@ -159,7 +119,7 @@ void *xor_encryption_thread(void *arg)
     clock_gettime(CLOCK_MONOTONIC, &start);
     while (current_pos < auth_tag_pos) {
         size_t in_nbytes_left = auth_tag_pos - current_pos;
-        size_t in_nbytes_wanted = in_nbytes_left < READ_SIZE ? in_nbytes_left : READ_SIZE;
+        size_t in_nbytes_wanted = in_nbytes_left < read_size ? in_nbytes_left : read_size;
 
         in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
         current_pos += in_nbytes;
@@ -167,7 +127,7 @@ void *xor_encryption_thread(void *arg)
         int out_nbytes = 0;
         borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
         fwrite(out_buf, 1, out_nbytes, out_file);
-        usleep(10000);
+        usleep(SLEEP_INTERVAL);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
@@ -226,24 +186,24 @@ int main(int argc, char *argv[])
     FILE *in_file = NULL;
 
     struct stat in_file_stat;
-    int err = stat(ciphertext_file, &in_file_stat);
+    int err = stat(FAST_ENC_FILE, &in_file_stat);
     if (err)
     {
-        fprintf(stderr, "Could not stat input file \"%s\"\n", ciphertext_file);
+        fprintf(stderr, "Could not stat input file \"%s\"\n", FAST_ENC_FILE);
         return -1;
     }
 
     size_t in_file_size = in_file_stat.st_size;
     if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
     {
-        fprintf(stderr, "Input file \"%s\" is too short\n", ciphertext_file);
+        fprintf(stderr, "Input file \"%s\" is too short\n", FAST_ENC_FILE);
         return -1;
     }
 
-    in_file = fopen(ciphertext_file, "rb");
+    in_file = fopen(FAST_ENC_FILE, "rb");
     if (!in_file)
     {
-        fprintf(stderr, "Could not open input file \"%s\"\n", ciphertext_file);
+        fprintf(stderr, "Could not open input file \"%s\"\n", FAST_ENC_FILE);
         return -1;
     }
 

@@ -1,5 +1,5 @@
 loop_count = 100
-sleep_time = 3
+sleep_time = 2
 
 IV = "e46858715f6ca44839c66579759307a2332bb751a28b254e8b5347ac193efd61"
 key = "0ee5c8893a86718f5a0d9852"

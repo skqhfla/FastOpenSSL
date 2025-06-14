@@ -7,14 +7,7 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#define READ_SIZE 8800
-
-const size_t KEY_LENGTH = 32;
-const size_t IV_LENGTH = 12;
-const size_t AUTH_TAG_LENGTH = 16;
-
-const char *in_fname = "encrypt.norm";
-const char *out_fname = "decrypt.norm";
+#include "test_common.h"
 
 int decrypt(FILE *in_file, FILE *out_file, const unsigned char *key, size_t auth_tag_pos, FILE *error_stream);
 
@@ -38,36 +31,36 @@ int main(int argc, char **argv)
     key = OPENSSL_hexstr2buf(key_hex, &decoded_key_len);
     if (!key || decoded_key_len != KEY_LENGTH)
     {
-        fprintf(stderr, "Wrong key \"%s\", must be %lu hex digits\n", key_hex, KEY_LENGTH * 2);
+        fprintf(stderr, "Wrong key \"%s\", must be %u hex digits\n", key_hex, KEY_LENGTH * 2);
         goto failure;
     }
 
     struct stat in_file_stat;
-    int err = stat(in_fname, &in_file_stat);
+    int err = stat(NORM_ENC_FILE, &in_file_stat);
     if (err)
     {
-        fprintf(stderr, "Could not stat input file \"%s\"\n", in_fname);
+        fprintf(stderr, "Could not stat input file \"%s\"\n", NORM_ENC_FILE);
         goto failure;
     }
 
     size_t in_file_size = in_file_stat.st_size;
     if (in_file_size < IV_LENGTH + AUTH_TAG_LENGTH)
     {
-        fprintf(stderr, "Input file \"%s\" is too short\n", in_fname);
+        fprintf(stderr, "Input file \"%s\" is too short\n", NORM_ENC_FILE);
         goto failure;
     }
 
-    in_file = fopen(in_fname, "rb");
+    in_file = fopen(NORM_ENC_FILE, "rb");
     if (!in_file)
     {
-        fprintf(stderr, "Could not open input file \"%s\"\n", in_fname);
+        fprintf(stderr, "Could not open input file \"%s\"\n", NORM_ENC_FILE);
         goto failure;
     }
 
-    out_file = fopen(out_fname, "wb");
+    out_file = fopen(NORM_DEC_FILE, "wb");
     if (!out_file)
     {
-        fprintf(stderr, "Could not open output file \"%s\"\n", out_fname);
+        fprintf(stderr, "Could not open output file \"%s\"\n", NORM_DEC_FILE);
         goto failure;
     }
 
@@ -103,11 +96,10 @@ int decrypt(FILE *in_file, FILE *out_file, const unsigned char *key, size_t auth
 
     EVP_CIPHER_CTX *ctx = NULL;
 
-    const size_t BUF_SIZE = 64 * 1024;
-    const size_t BLOCK_SIZE = 16;
-    unsigned char *in_buf = malloc(BUF_SIZE);
-    unsigned char *out_buf = malloc(BUF_SIZE + BLOCK_SIZE);
+    unsigned char *in_buf = malloc(P_BUFFER_SIZE);
+    unsigned char *out_buf = malloc(P_BUFFER_SIZE);
 
+    size_t read_size = f_size(PLAINTEXT_FILE);
     size_t in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
     size_t current_pos = in_nbytes;
 
@@ -121,7 +113,7 @@ int decrypt(FILE *in_file, FILE *out_file, const unsigned char *key, size_t auth
     while (current_pos < auth_tag_pos)
     {
         size_t in_nbytes_left = auth_tag_pos - current_pos;
-        size_t in_nbytes_wanted = in_nbytes_left < READ_SIZE ? in_nbytes_left : READ_SIZE;
+        size_t in_nbytes_wanted = in_nbytes_left < read_size ? in_nbytes_left : read_size;
 
         in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
         current_pos += in_nbytes;
@@ -129,7 +121,7 @@ int decrypt(FILE *in_file, FILE *out_file, const unsigned char *key, size_t auth
         int out_nbytes = 0;
         EVP_DecryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes);
         fwrite(out_buf, 1, out_nbytes, out_file);
-        usleep(10000);
+        usleep(SLEEP_INTERVAL);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
