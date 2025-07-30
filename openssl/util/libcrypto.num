@@ -4211,6 +4211,7 @@ borim_aes_gcm_cipher                    4161	1_1_0	EXIST::FUNCTION:
 borim_EVP_EncryptUpdate                 4162	1_1_0	EXIST::FUNCTION:
 jinho_EVP_EncryptInit_ex                4163	1_1_0	EXIST::FUNCTION:
 jinho_EVP_EncryptUpdate                 4164	1_1_0	EXIST::FUNCTION:
+jinho_EVP_DecryptInit_ex                4165	1_1_0	EXIST::FUNCTION:
 OCSP_RESPID_set_by_name                 4165	1_1_0a	EXIST::FUNCTION:OCSP
 OCSP_RESPID_set_by_key                  4166	1_1_0a	EXIST::FUNCTION:OCSP
 OCSP_RESPID_match                       4167	1_1_0a	EXIST::FUNCTION:OCSP
