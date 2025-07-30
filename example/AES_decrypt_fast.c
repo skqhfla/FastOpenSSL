@@ -216,7 +216,7 @@ int main(int argc, char *argv[])
     fclose(in_file);
 
     // AES-GCM 모드 설정
-    if (!jinho_EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
+    if (!jinho_EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

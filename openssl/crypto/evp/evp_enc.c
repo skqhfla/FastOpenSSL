@@ -256,6 +256,19 @@ int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, EVP_CIPHER *cipher,
     return EVP_CipherInit_ex(ctx, tmp_cipher, impl, key, iv, 1);
 }
 
+int jinho_EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx, EVP_CIPHER *cipher,
+                       ENGINE *impl, const unsigned char *key,
+                       const unsigned char *iv)
+{
+
+    EVP_CIPHER *tmp_cipher = OPENSSL_zalloc(sizeof(EVP_CIPHER));
+    memcpy(tmp_cipher, cipher, sizeof(EVP_CIPHER));
+    EVP_CIPHER_meth_set_do_jinho(tmp_cipher, jinho_aes_gcm_cipher);
+    EVP_CIPHER_meth_set_do_borim(tmp_cipher, borim_aes_gcm_cipher);
+    
+    return EVP_CipherInit_ex(ctx, tmp_cipher, impl, key, iv, 0);
+}
+
 
 int EVP_DecryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                     const unsigned char *key, const unsigned char *iv)
