@@ -1198,7 +1198,7 @@ int jinho_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 	ctx->Yi.d[3] = ctr;
     return 0;
 }
-#define borim_BUFFER_SIZE 1024
+#define borim_BUFFER_SIZE 8192
 #define borim_AES_GCM_BLOCK_SIZE 16
 unsigned char generated_keystreams[borim_BUFFER_SIZE][borim_AES_GCM_BLOCK_SIZE];
 

@@ -1,11 +1,13 @@
 #!/bin/bash
 
-LOOP_CNT=`cat test_common.h | grep LOOP | cut -d " " -f3`
+LOOP_CNT=`cat test_common.h | grep LOOP | tr -d ''| cut -d " " -f3`
+BUFFER_SIZE=`cat test_common.h | grep " BUFFER_SIZE" | tr -d '' |cut -d " " -f3`
 PLAIN_SIZE=`stat -c "%s" "plaintext.txt"`
 
 echo "#### Info"
 echo "- LOOP COUNT: ${LOOP_CNT}"
 echo "- TEXT SIZE: ${PLAIN_SIZE}"
+echo "- BUFFER SIZE: ${BUFFER_SIZE}"
 echo
 
 echo "### Fast OpenSSL"
