@@ -12,9 +12,17 @@ It utilizes a **circular buffer** to generate key streams in parallel and applie
 ./example # Sample code demonstrating FastOpenSSL (original vs. FastOpenSSL)
 ```
 
-## ⚙️ Run the Sample code
+## ⚙️ Build FastOpenSSL
 ```bash
+cd ./openssl
 ./config -Wl,-rpath,$HOME/openssl_build/lib -g -O0 --prefix=$HOME/openssl_build
+make
+make install
+```
+
+## ⚙️ Run the Sample code 
+```bash
+# After build FastOpenSSL
 cd example
 ./mk.sh
 ```
