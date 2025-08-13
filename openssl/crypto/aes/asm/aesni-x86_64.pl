@@ -1724,8 +1724,8 @@ borim_aesni_ctr32_encrypt_blocks:
 
 	movups	($key),$inout0
 	movups	($inp),$inout1
-	pxor	$inout1,$inout0
-	movups	$inout0,($out)
+  # pxor	$inout1,$inout0
+  # movups	$inout0,($out)
 ___
 $code.=<<___;
 	 pxor	$rndkey0,$rndkey0		# clear register bank
