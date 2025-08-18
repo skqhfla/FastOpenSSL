@@ -149,6 +149,7 @@ void *xor_encryption_thread(void *arg)
     {
         fprintf(stdout, "Decryption error\n");
     }
+    fprintf(stderr, "Decryption succeeded\n");
 
     fclose(out_file);
     fclose(in_file);

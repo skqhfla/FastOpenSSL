@@ -1885,7 +1885,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 if (len >= 16 && AES_GCM_ASM(gctx)) {
                     size_t res = (16 - gctx->gcm.mres) % 16;
 
-                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystruct))
+                    if (borim_CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res, keystruct))
                         return -1;
                     /*
                     bulk = AES_gcm_decrypt(in + res,
@@ -1897,7 +1897,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     */
                 }
 #endif
-              if (borim_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
+              if (borim_CRYPTO_gcm128_decrypt_ctr32(&gctx->gcm,
                                               in + bulk,
                                               out + bulk,
                                               len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
