@@ -1260,13 +1260,14 @@ int borim_processKeystream(void *keystruct, unsigned char *buf, int len) {
 
 int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                           const unsigned char *in, unsigned char *out,
-                          size_t len, void *keystruct)
+                          size_t len, unsigned char *ks, int block_cnt)
 {
     // fprintf(stdout, "borim_CRYPTO_gcm128_encrypt\n\n");
     unsigned int n, ctr;
     size_t i;
     u64 mlen = ctx->len.u[1];
     block128_f block = ctx->block;
+    // unsigned char *key_ptr;
 #ifdef GCM_FUNCREF_4BIT
     void (*gcm_gmult_p) (u64 Xi[2], const u128 Htable[16]) = ctx->gmult;
 # if defined(GHASH) && !defined(OPENSSL_SMALL_FOOTPRINT)
@@ -1291,12 +1292,14 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
     if (16 % sizeof(size_t) == 0) { /* always true actually */
         do {
             if (n) {
-		int cnt = 0;
+                /*
+                fprintf(stdout, "n: %d\n", n);
+                print_keystream(stdout, ks, 0, 1);
+                */
                 while (n && len) {
                     ctx->Xi.c[n] ^= *(out++) = *(in++) ^ ctx->EKi.c[n];
                     --len;
                     n = (n + 1) % 16;
-		    cnt++;
                 }
                 if (n == 0)
                     GCM_MUL(ctx, Xi);
@@ -1317,16 +1320,16 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                 while (j) {
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
-                    borim_processKeystream(keystruct, ctx->EKi.c, 1);
+                     // borim_processKeystream(keystruct, ctx->EKi.c, 1);
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
-                        out_t[i] = in_t[i] ^ ctx->EKi.t[i];
+                        out_t[i] = in_t[i] ^ *ks++;
                     out += 16;
                     in += 16;
                     j -= 16;
                 }
 
-		size_t *out_t = (size_t *)out;
-		const size_t *in_t = (const size_t *)in;
+                size_t *out_t = (size_t *)out;
+                const size_t *in_t = (const size_t *)in;
 		
                 GHASH(ctx, out - GHASH_CHUNK, GHASH_CHUNK);
                 len -= GHASH_CHUNK;
@@ -1339,10 +1342,10 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
 
-    		    borim_processKeystream(keystruct, ctx->EKi.c, 1);
+    		    // borim_processKeystream(keystruct, ctx->EKi.c, 1);
 
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
-                        out_t[i] = in_t[i] ^ ctx->EKi.t[i];
+                        out_t[i] = in_t[i] ^ *ks++;
                     out += 16;
                     in += 16;
                     len -= 16;
@@ -1354,45 +1357,56 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
                 size_t *out_t = (size_t *)out;
                 const size_t *in_t = (const size_t *)in;
 		
-    		borim_processKeystream(keystruct, ctxEKi.c, 1);
+    		// borim_processKeystream(keystruct, ctxEKi.c, 1);
 
                 for (i = 0; i < 16 / sizeof(size_t); ++i)
-                    ctx->Xi.t[i] ^= out_t[i] = in_t[i] ^ ctx->EKi.t[i];
+                    ctx->Xi.t[i] ^= out_t[i] = in_t[i] ^ *ks++;
                 GCM_MUL(ctx, Xi);
                 out += 16;
                 in += 16;
                 len -= 16;
 	    }
 # endif
+            // key_ptr = ks;
             if (len) {
 
-                borim_processKeystream(keystruct, ctx->EKi.c, 1);
+                // borim_processKeystream(keystruct, ctx->EKi.c, 1);
                 
                 int cnt = 0;
                 while (len--) {
-                    ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
+                    ctx->Xi.c[n] ^= out[n] = in[n] ^ *ks++;
                     ++n;
                     cnt++;
                 }
 
             }
 
+            /*
+            if (n != 0) {
+                memcpy(ctx->EKi.c, key_ptr, 16);
+            }
+            */
             ctx->mres = n;
             return 0;
         } while (0);
     }
 #endif
+    // key_ptr = ks;
     for (i = 0; i < len; ++i) {
+        if(n == 0){
+            // borim_processKeystream(keystruct, ctx->EKi.c, 1);
+        }
 
-	if(n == 0){
-    	    borim_processKeystream(keystruct, ctx->EKi.c, 1);
-	}
-
-        ctx->Xi.c[n] ^= out[i] = in[i] ^ ctx->EKi.c[n];
+        ctx->Xi.c[n] ^= out[i] = in[i] ^ *ks++;
         n = (n + 1) % 16;
         if (n == 0)
             GCM_MUL(ctx, Xi);
     }
+    /*
+    if (n != 0) {
+        memcpy(ctx->EKi.c, key_ptr, 16);
+    }
+    */
 
     ctx->mres = n;
     return 0;
@@ -1400,7 +1414,7 @@ int borim_CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx,
 
 int borim_CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
                           const unsigned char *in, unsigned char *out,
-                          size_t len, void *keystruct)
+                          size_t len, unsigned char *ks, int blokc_cnt)
 {
     unsigned int n, ctr;
     size_t i;
@@ -1430,9 +1444,11 @@ int borim_CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
     if (16 % sizeof(size_t) == 0) { /* always true actually */
         do {
             if (n) {
+                // unsigned char *key_ptr = ctx->EKi.c[0];
                 while (n && len) {
                     u8 c = *(in++);
-                    *(out++) = c ^ ctx->EKi.c[n];
+                    // *(out++) = c ^ ctx->EKi.c[n];
+                    *(out++) = c ^ *ks++;
                     ctx->Xi.c[n] ^= c;
                     --len;
                     n = (n + 1) % 16;
@@ -1457,9 +1473,9 @@ int borim_CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
                 while (j) {
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
-                    borim_processKeystream(keystruct, ctx->EKi.c, 1);
+                    // borim_processKeystream(keystruct, ctx->EKi.c, 1);
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
-                        out_t[i] = in_t[i] ^ ctx->EKi.t[i];
+                        out_t[i] = in_t[i] ^ *ks++;
                     out += 16;
                     in += 16;
                     j -= 16;
@@ -1476,9 +1492,9 @@ int borim_CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
                 while (len >= 16) {
                     size_t *out_t = (size_t *)out;
                     const size_t *in_t = (const size_t *)in;
-                    borim_processKeystream(keystruct, ctx->EKi.c, 1);
+                    // borim_processKeystream(keystruct, ctx->EKi.c, 1);
                     for (i = 0; i < 16 / sizeof(size_t); ++i)
-                        out_t[i] = in_t[i] ^ ctx->EKi.t[i];
+                        out_t[i] = in_t[i] ^ *ks++;
                     out += 16;
                     in += 16;
                     len -= 16;
@@ -1498,15 +1514,19 @@ int borim_CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
 	    }
 # endif
             if (len) {
-                borim_processKeystream(keystruct, ctx->EKi.c, 1);
+                // borim_processKeystream(keystruct, ctx->EKi.c, 1);
                 while (len--) {
                     u8 c = in[n];
                     ctx->Xi.c[n] ^= c;
-                    out[n] = c ^ ctx->EKi.c[n];
+                    out[n] = c ^ *ks++;
                     ++n;
                 }
             }
-
+            /*
+            if (n != 0) {
+                memcpy(ctx->EKi.c, ks, 16 - n);
+            }
+            */
             ctx->mres = n;
             return 0;
         } while (0);
@@ -1515,16 +1535,20 @@ int borim_CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx,
     for (i = 0; i < len; ++i) {
         u8 c;
         if(n == 0){
-              borim_processKeystream(keystruct, ctx->EKi.c, 1);
+              // borim_processKeystream(keystruct, ctx->EKi.c, 1);
             }
             c = in[i];
-            out[i] = c ^ ctx->EKi.c[n];
+            out[i] = c ^ *ks++;
             ctx->Xi.c[n] ^= c;
             n = (n + 1) % 16;
             if (n == 0)
                 GCM_MUL(ctx, Xi);
     }
-
+    /*
+    if (n != 0) {
+        memcpy(ctx->EKi.c, ks, 16 - n);
+    }
+    */
     ctx->mres = n;
     return 0;
 }
@@ -2141,20 +2165,21 @@ int jinho_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 
 int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
                                 const unsigned char *in, unsigned char *out,
-                                size_t len, ctr128_f stream, void *keystruct)
+                                size_t len, ctr128_f stream, unsigned char *ks, int block_cnt)
 {
     // fprintf(stdout, "borim_CRYPTO_gcm128_encrypt_ctr32\n\n");
 #if defined(OPENSSL_SMALL_FOOTPRINT)
-    return borim_CRYPTO_gcm128_encrypt(ctx, in, out, len, keystruct);
+    return borim_CRYPTO_gcm128_encrypt(ctx, in, out, len, ks, block_cnt);
 #else
     const union {
         long one;
         char little;
     } is_endian = { 1 };
-    unsigned int n, ctr, cnt;
+    unsigned int n, ctr;
     size_t i;
     u64 mlen = ctx->len.u[1];
     void *key = ctx->key;
+    // unsigned char *key_ptr;
 # ifdef GCM_FUNCREF_4BIT
     void (*gcm_gmult_p) (u64 Xi[2], const u128 Htable[16]) = ctx->gmult;
 #  ifdef GHASH
@@ -2176,8 +2201,13 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 
     n = ctx->mres;
     if (n) {
+        /*
+        fprintf(stdout, "n: %d\n", n);
+        print_keystream(stdout, ks, 0, 1);
+        */
         while (n && len) {
-            ctx->Xi.c[n] ^= *(out++) = *(in++) ^ ctx->EKi.c[n];
+            // ctx->Xi.c[n] ^= *(out++) = *(in++) ^ ctx->EKi.c[n];
+            ctx->Xi.c[n] ^= *(out++) = *(in++) ^ *ks++;
             --len;
             n = (n + 1) % 16;
         }
@@ -2185,7 +2215,7 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
             GCM_MUL(ctx, Xi);
         else {
             ctx->mres = n;
-            return 0;
+            return 1;
         }
     }
     /*
@@ -2208,32 +2238,33 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
     }
 # endif
 */
-    int block_cnt = 0;
     while (len >= 16) {
         size_t cnt = len / 16;
-        
-        block_cnt = borim_processKeystream(keystruct, generated_keystreams, cnt);
-        if (block_cnt == -1) 
+                
+        // block_cnt = borim_processKeystream(keystruct, generated_keystreams, cnt);
+        if (cnt <= 0)
             return -1;
         /*
         fprintf(stdout,"Plain Text\n");
-        print_keystream(stdout, in, 0, block_cnt);
+        print_keystream(stdout, in, 0, cnt);
 
         fprintf(stdout,"Key Stream\n");
-        print_keystream(stdout, generated_keystreams, 0, block_cnt);
+        print_keystream(stdout, ks, 0, cnt);
         */
 
-        (*stream) (in, out, block_cnt, generated_keystreams, NULL);
+        (*stream) (in, out, cnt, ks, NULL);
         /*
         fprintf(stdout,"Cipher Text\n");
-        print_keystream(stdout, out, 0, block_cnt);
+        print_keystream(stdout, out, 0, cnt);
         fprintf(stdout, "\n");
         */
 
-        GHASH(ctx, out, block_cnt * 16);
-        out += block_cnt * 16;
-        in += block_cnt * 16;
-	    len -= block_cnt * 16;
+        GHASH(ctx, out, cnt * 16);
+        out += cnt * 16;
+        in += cnt * 16;
+        ks += cnt * 16;
+	    len -= cnt * 16;
+        block_cnt -= cnt;
     }
     /*
     if ((i = (len & (size_t)-16))) {
@@ -2252,9 +2283,10 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
 
     }
     */
+    // key_ptr = ks;
     if (len) {
-        block_cnt = borim_processKeystream(keystruct, ctx->EKi.c, 1);
-        if (block_cnt == -1)
+        // block_cnt = borim_processKeystream(keystruct, ctx->EKi.c, 1);
+        if (block_cnt <= 0)
             return -1;
 
         /*
@@ -2262,10 +2294,10 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         print_keystream(stdout, in, 0, 1);
 
         fprintf(stdout,"Key Stream\n");
-        print_keystream(stdout, ctx->EKi.c, 0, 1);
+        print_keystream(stdout,ks, 0, 1);
         */
         while (len--) {
-            ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
+            ctx->Xi.c[n] ^= out[n] = in[n] ^ *ks++;
             ++n;
         }
 
@@ -2303,6 +2335,11 @@ int borim_CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx,
         }
     }
 #endif
+    /*
+    if (n != 0) {
+        memcpy(ctx->EKi.c, key_ptr, 16);
+    }
+    */
 
     ctx->mres = n;
     return 0;
@@ -2606,11 +2643,11 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
 
 int borim_CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
                                 const unsigned char *in, unsigned char *out,
-                                size_t len, ctr128_f stream, void *keystruct)
+                                size_t len, ctr128_f stream, unsigned char *ks, int block_cnt)
 {
     // fprintf(stdout, "borim_CRYPTO_gcm128_encrypt_ctr32\n\n");
 #if defined(OPENSSL_SMALL_FOOTPRINT)
-    return borim_CRYPTO_gcm128_encrypt(ctx, in, out, len, keystruct);
+    return borim_CRYPTO_gcm128_decrypt(ctx, in, out, len, ks, block_cnt);
 #else
     const union {
         long one;
@@ -2641,9 +2678,10 @@ int borim_CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
 
     n = ctx->mres;
     if (n) {
+        // unsigned char *key_ptr = ctx->EKi.c;
         while (n && len) {
             u8 c = *(in++);
-            *(out++) = c ^ ctx->EKi.c[n];
+            *(out++) = c ^ *ks++;
             ctx->Xi.c[n] ^= c;
             --len;
             n = (n + 1) % 16;
@@ -2675,33 +2713,33 @@ int borim_CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
     }
 # endif
 */
-    int block_cnt = 0;
     while (len >= 16) {
         size_t cnt = len / 16;
-        
-        block_cnt = borim_processKeystream(keystruct, generated_keystreams, cnt);
-        if (block_cnt == -1) 
+                
+        // block_cnt = borim_processKeystream(keystruct, generated_keystreams, cnt);
+        if (cnt <= 0)
             return -1;
         /*
-        fprintf(stdout,"[ctr32: %d] Plain Text\n", __LINE__);
-        print_keystream(stdout, in, 0, block_cnt);
+        fprintf(stdout,"Plain Text\n");
+        print_keystream(stdout, in, 0, cnt);
 
-        fprintf(stdout,"[ctr32: %d] Key Stream\n", __LINE__);
-        print_keystream(stdout, generated_keystreams, 0, block_cnt);
+        fprintf(stdout,"Key Stream\n");
+        print_keystream(stdout, ks, 0, cnt);
         */
 
-        GHASH(ctx, in, block_cnt * 16);
-        (*stream) (in, out, block_cnt, generated_keystreams, NULL);
+        GHASH(ctx, in, cnt * 16);
+        (*stream) (in, out, cnt, ks, NULL);
         /*
-        fprintf(stdout,"[ctr32: %d] Cipher Text\n", __LINE__);
-        print_keystream(stdout, out, 0, block_cnt);
+        fprintf(stdout,"Cipher Text\n");
+        print_keystream(stdout, out, 0, cnt);
         fprintf(stdout, "\n");
         */
-        
 
-        out += block_cnt * 16;
-        in += block_cnt * 16;
-	      len -= block_cnt * 16;
+        out += cnt * 16;
+        in += cnt * 16;
+        ks += cnt * 16;
+	    len -= cnt * 16;
+        block_cnt -= cnt;
     }
     /*
     if ((i = (len & (size_t)-16))) {
@@ -2721,26 +2759,27 @@ int borim_CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
     }
     */
     if (len) {
-        block_cnt = borim_processKeystream(keystruct, ctx->EKi.c, 1);
-        if (block_cnt == -1)
+        // block_cnt = borim_processKeystream(keystruct, ctx->EKi.c, 1);
+        if (block_cnt <= 0)
             return -1;
 
         /*
-        fprintf(stdout,"[ctr32: %d] Plain Text\n", __LINE__);
+        fprintf(stdout,"Plain Text\n");
         print_keystream(stdout, in, 0, 1);
 
-        fprintf(stdout,"[ctr32: %d] Key Stream\n", __LINE__);
-        print_keystream(stdout, ctx->EKi.c, 0, 1);
+        fprintf(stdout,"Key Stream\n");
+        print_keystream(stdout, ks, 0, 1);
         */
 
         while (len--) {
             u8 c = in[n];
             ctx->Xi.c[n] ^= c;
-            out[n] = c ^ ctx->EKi.c[n];
+            out[n] = c ^ *ks++;
             ++n;
         }
+
         /*
-        fprintf(stdout,"[ctr32: %d] Cipher Text\n", __LINE__);
+        fprintf(stdout,"Cipher Text\n");
         print_keystream(stdout, out, 0, 1);
         fprintf(stdout, "\n");
         */
@@ -2773,7 +2812,11 @@ int borim_CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx,
         }
     }
 #endif
-
+    /*
+    if (n != 0) {
+        memcpy(ctx->EKi.c, ks, 16 - n);
+    }
+    */
     ctx->mres = n;
     return 0;
 #endif

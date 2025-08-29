@@ -25,6 +25,59 @@ unsigned char iv[IV_LENGTH];
 EVP_CIPHER_CTX *ctx;             
 atomic_bool stop_flag = false;
 
+int CB_used(int head, int tail, int buf_size) {
+    return (tail - head + buf_size) % buf_size;
+}
+
+int borim_processKeystream(unsigned char *buf, int len) {
+    int cnt = 0, res = len;
+    int head_index, item_len, tail_index;
+    if (buf == NULL) 
+        return -1;
+
+    while (res != 0) {
+        while (1) {
+            item_len = CB_used(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
+            if (item_len <= 0) {
+            } else {
+                head_index = atomic_load(&ks_buffer.head);
+                tail_index = atomic_load(&ks_buffer.tail);
+                /*
+                head_index = ks_buffer.head;
+                tail_index = ks_buffer.tail;
+                */
+                break;
+            }
+        }
+
+        if (item_len <= res) 
+            cnt = item_len;
+        else
+            cnt = res;
+
+        int space_end = head_index + cnt;
+
+        if (space_end <= BUFFER_SIZE) {
+            memcpy(buf, ks_buffer.keystreams[head_index], AES_GCM_BLOCK_SIZE * cnt);
+        } else {
+            int end = BUFFER_SIZE - head_index;
+            int rest = (head_index + cnt) % BUFFER_SIZE;
+
+            memcpy(buf, ks_buffer.keystreams[head_index], AES_GCM_BLOCK_SIZE * end);
+            memcpy(buf + (AES_GCM_BLOCK_SIZE * end), ks_buffer.keystreams[0], AES_GCM_BLOCK_SIZE * rest);
+        }
+        atomic_store(&ks_buffer.head, (head_index + cnt) % BUFFER_SIZE);
+        /*
+        ks_buffer.head = (head_index + res) % BUFFER_SIZE;
+        */
+
+        res -= cnt;
+        buf += (cnt * AES_GCM_BLOCK_SIZE);
+
+    }
+    return res;
+}
+
 void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int buf_len)
 {
     jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
@@ -46,10 +99,10 @@ void *keystream_generator_thread(void *arg)
             continue;
         }
 
-        /*
         int tail_index = atomic_load(&ks_buffer.tail);
-        */
+        /*
         int tail_index = ks_buffer.tail;
+        */
 
         int space_end = BUFFER_SIZE - ks_buffer.tail;
         if (space_end >= CHUNK_SIZE) {
@@ -59,10 +112,10 @@ void *keystream_generator_thread(void *arg)
             aes_gcm_generate_keystream(ks_buffer.keystreams[0], &block_cnt, CHUNK_SIZE - space_end);
         }
 
-        /*
         atomic_store(&ks_buffer.tail, (tail_index + CHUNK_SIZE) % BUFFER_SIZE);
-         */
+        /*
         ks_buffer.tail = (ks_buffer.tail + CHUNK_SIZE) % BUFFER_SIZE;
+         */
     }
 
     return NULL;
@@ -106,12 +159,14 @@ void *xor_encryption_thread(void *arg)
     unsigned char auth_tag[AUTH_TAG_LENGTH];
     unsigned char* in_buf  = malloc(P_BUFFER_SIZE);
     unsigned char* out_buf = malloc(P_BUFFER_SIZE);
+    unsigned char ks[BUFFER_SIZE][AES_GCM_BLOCK_SIZE];
 
     int in_nbytes = fread(iv, 1, IV_LENGTH, in_file);
 
     size_t read_size = f_size(PLAINTEXT_FILE);
     size_t auth_tag_pos = in_file_size - AUTH_TAG_LENGTH;
     size_t current_pos = in_nbytes;
+    size_t block_cnt = 0;
 
     struct timespec start, end;
     double elapsed_time;
@@ -122,10 +177,18 @@ void *xor_encryption_thread(void *arg)
         size_t in_nbytes_wanted = in_nbytes_left < read_size ? in_nbytes_left : read_size;
 
         in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
-        current_pos += in_nbytes;
 
+        if ((in_nbytes % AES_GCM_BLOCK_SIZE) == 0) 
+            block_cnt = in_nbytes / AES_GCM_BLOCK_SIZE;
+        else
+            block_cnt = in_nbytes / AES_GCM_BLOCK_SIZE + 1;
+
+        current_pos += in_nbytes;
+        
         int out_nbytes = 0;
-        borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
+        // borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
+        borim_processKeystream(ks, block_cnt);
+        borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, ks, block_cnt);
         fwrite(out_buf, 1, out_nbytes, out_file);
         usleep(SLEEP_INTERVAL);
     }
@@ -148,8 +211,9 @@ void *xor_encryption_thread(void *arg)
     if (!ok)
     {
         fprintf(stdout, "Decryption error\n");
+    } else {
+        fprintf(stderr, "Decryption succeeded\n");
     }
-    fprintf(stderr, "Decryption succeeded\n");
 
     fclose(out_file);
     fclose(in_file);

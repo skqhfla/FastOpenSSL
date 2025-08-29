@@ -1810,7 +1810,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 // JINHO: Encrypt #2
 int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
-                          const unsigned char *in, size_t len, void *keystruct)
+                          const unsigned char *in, size_t len, unsigned char *ks, int block_cnt)
 {
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
     // gctx->ctr = (ctr128_f) borim_aesni_ctr32_encrypt_blocks;
@@ -1838,7 +1838,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, keystruct))
+                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, ks, block_cnt))
                         return -1;
 
                     /*
@@ -1855,7 +1855,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                                 in + bulk,
                                                 out + bulk,
                                                 len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
-						keystruct))
+                                                ks, block_cnt))
                     return -1;
             } else {
                 size_t bulk = 0;
@@ -1885,7 +1885,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 if (len >= 16 && AES_GCM_ASM(gctx)) {
                     size_t res = (16 - gctx->gcm.mres) % 16;
 
-                    if (borim_CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res, keystruct))
+                    if (borim_CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res, ks, block_cnt))
                         return -1;
                     /*
                     bulk = AES_gcm_decrypt(in + res,
@@ -1901,7 +1901,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                               in + bulk,
                                               out + bulk,
                                               len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
-                                              keystruct))
+                                              ks, block_cnt))
                     return -1;
             } else {
                 size_t bulk = 0;

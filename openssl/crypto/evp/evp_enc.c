@@ -496,7 +496,7 @@ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
 
 // JINHO: Encrypt #1
 int borim_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
-                      const unsigned char *in, int inl, void *keystruct)
+                      const unsigned char *in, int inl, unsigned char *ks, int block_cnt)
 {
     int i, j, bl, cmpl = inl;
 
@@ -519,7 +519,7 @@ int borim_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
         }
 
 	// JINHO: Encrypt #2 -> aes_gcm_cipher
-        i = ctx->cipher->do_borim(ctx, out, in, inl, keystruct);
+        i = ctx->cipher->do_borim(ctx, out, in, inl, ks, block_cnt);
         if (i < 0)
             return 0;
         else
@@ -537,7 +537,7 @@ int borim_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
     }
 
     if (ctx->buf_len == 0 && (inl & (ctx->block_mask)) == 0) {
-        if (ctx->cipher->do_borim(ctx, out, in, inl, keystruct)) {
+        if (ctx->cipher->do_borim(ctx, out, in, inl, ks, block_cnt)) {
             *outl = inl;
             return 1;
         } else {
@@ -558,7 +558,7 @@ int borim_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
             memcpy(&(ctx->buf[i]), in, j);
             inl -= j;
             in += j;
-            if (!ctx->cipher->do_borim(ctx, out, ctx->buf, bl, keystruct))
+            if (!ctx->cipher->do_borim(ctx, out, ctx->buf, bl, ks, block_cnt))
                 return 0;
             out += bl;
             *outl = bl;
@@ -568,7 +568,7 @@ int borim_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
     i = inl & (bl - 1);
     inl -= i;
     if (inl > 0) {
-        if (!ctx->cipher->do_borim(ctx, out, in, inl, keystruct))
+        if (!ctx->cipher->do_borim(ctx, out, in, inl, ks, block_cnt))
             return 0;
         *outl += inl;
     }
