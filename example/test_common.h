@@ -25,6 +25,7 @@
 #define WAIT_INTERVAL   10
 
 
+
 int f_read_contents(char *f_name, unsigned char *buffer, int buf_size) {
     long f_size;
     int read_len;
@@ -66,3 +67,26 @@ size_t f_size(char *f_name) {
 
     return size;
 }
+
+void print_keystream(FILE *out, unsigned char *keystream, int ctr_start, int len) {
+  for (size_t i=0; i<len; i++) {
+    unsigned ctr = ctr_start + i;
+    fprintf(out, "(CTR = %08d) ", ctr);
+    for (size_t j=0; j<16; j++) {
+      fprintf(out, "%02x ", keystream[i * 16 + j]);
+    }
+    fprintf(out, "\n");
+  }
+}
+
+
+int CB_used(int head, int tail, int buf_size) {
+    return (tail - head + buf_size) % buf_size;
+}
+
+int CB_free_space(int head, int tail, int buf_size) {
+    return (head - tail - 1 + buf_size) % buf_size;
+}
+
+
+

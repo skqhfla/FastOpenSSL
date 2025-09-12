@@ -19,72 +19,55 @@ typedef struct
     atomic_int tail;
 } CircularBuffer;
 
+
+
 CircularBuffer ks_buffer;
 unsigned char aes_key[KEY_LENGTH]; 
 unsigned char iv[IV_LENGTH];      
 EVP_CIPHER_CTX *ctx;             
 atomic_bool stop_flag = false;
 
-int CB_used(int head, int tail, int buf_size) {
-    return (tail - head + buf_size) % buf_size;
-}
-
-int borim_processKeystream(unsigned char *buf, int len) {
-    int cnt = 0, res = len;
-    int head_index, item_len, tail_index;
+int borim_processKeystream(unsigned char *buf, int len, int is_mres) {
+    int head_index, item_len;
     if (buf == NULL) 
         return -1;
 
-    while (res != 0) {
-        while (1) {
-            item_len = CB_used(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
-            if (item_len <= 0) {
-            } else {
-                head_index = atomic_load(&ks_buffer.head);
-                tail_index = atomic_load(&ks_buffer.tail);
-                /*
-                head_index = ks_buffer.head;
-                tail_index = ks_buffer.tail;
-                */
-                break;
-            }
-        }
-
-        if (item_len <= res) 
-            cnt = item_len;
-        else
-            cnt = res;
-
-        int space_end = head_index + cnt;
-
-        if (space_end <= BUFFER_SIZE) {
-            memcpy(buf, ks_buffer.keystreams[head_index], AES_GCM_BLOCK_SIZE * cnt);
+    while (1) {
+        item_len = CB_used(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
+        if (item_len < len) {
+            // usleep(10)
         } else {
-            int end = BUFFER_SIZE - head_index;
-            int rest = (head_index + cnt) % BUFFER_SIZE;
-
-            memcpy(buf, ks_buffer.keystreams[head_index], AES_GCM_BLOCK_SIZE * end);
-            memcpy(buf + (AES_GCM_BLOCK_SIZE * end), ks_buffer.keystreams[0], AES_GCM_BLOCK_SIZE * rest);
+            head_index = atomic_load(&ks_buffer.head);
+            /*
+            head_index = ks_buffer.head;
+            */
+            break;
         }
-        atomic_store(&ks_buffer.head, (head_index + cnt) % BUFFER_SIZE);
-        /*
-        ks_buffer.head = (head_index + res) % BUFFER_SIZE;
-        */
-
-        res -= cnt;
-        buf += (cnt * AES_GCM_BLOCK_SIZE);
-
     }
-    return res;
+
+    int space_end = head_index + len;
+
+    if (space_end <= BUFFER_SIZE) {
+        memcpy(buf, ks_buffer.keystreams[head_index], AES_GCM_BLOCK_SIZE * len);
+    } else {
+        int end = BUFFER_SIZE - head_index;
+        int rest = (head_index + len) % BUFFER_SIZE;
+
+        memcpy(buf, ks_buffer.keystreams[head_index], AES_GCM_BLOCK_SIZE * end);
+        memcpy(buf + (AES_GCM_BLOCK_SIZE * end), ks_buffer.keystreams[0], AES_GCM_BLOCK_SIZE * rest);
+    }
+    atomic_store(&ks_buffer.head, (head_index + len - is_mres) % BUFFER_SIZE);
+    /*
+    ks_buffer.head = (head_index + res) % BUFFER_SIZE;
+    */
+
+    return len - is_mres;
 }
+
 
 void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int buf_len)
 {
     jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
-}
-
-int CB_free_space(CircularBuffer cb) {
-    return (cb.head - cb.tail - 1 + BUFFER_SIZE) % BUFFER_SIZE;
 }
 
 
@@ -93,7 +76,7 @@ void *keystream_generator_thread(void *arg)
     int block_cnt;
     while (!stop_flag)
     {
-        int free_space = CB_free_space(ks_buffer);
+        int free_space = CB_free_space(ks_buffer.head, ks_buffer.tail, BUFFER_SIZE);
         if(free_space < CHUNK_SIZE) {
             usleep(WAIT_INTERVAL);
             continue;
@@ -166,29 +149,28 @@ void *xor_encryption_thread(void *arg)
     size_t read_size = f_size(PLAINTEXT_FILE);
     size_t auth_tag_pos = in_file_size - AUTH_TAG_LENGTH;
     size_t current_pos = in_nbytes;
-    size_t block_cnt = 0;
+    int decrypted_len = 0, block_cnt = 0;
 
     struct timespec start, end;
     double elapsed_time;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
+    int mres = 0;
     while (current_pos < auth_tag_pos) {
         size_t in_nbytes_left = auth_tag_pos - current_pos;
         size_t in_nbytes_wanted = in_nbytes_left < read_size ? in_nbytes_left : read_size;
 
         in_nbytes = fread(in_buf, 1, in_nbytes_wanted, in_file);
 
-        if ((in_nbytes % AES_GCM_BLOCK_SIZE) == 0) 
-            block_cnt = in_nbytes / AES_GCM_BLOCK_SIZE;
-        else
-            block_cnt = in_nbytes / AES_GCM_BLOCK_SIZE + 1;
-
+        decrypted_len = mres + in_nbytes;
+        block_cnt = (decrypted_len % 16 == 0) ? decrypted_len / 16 : decrypted_len / 16 + 1;
         current_pos += in_nbytes;
-        
+
         int out_nbytes = 0;
-        // borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, &ks_buffer);
-        borim_processKeystream(ks, block_cnt);
+        borim_processKeystream(ks, block_cnt, (decrypted_len % 16) != 0);
         borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, ks, block_cnt);
+        mres = (out_nbytes + mres) % 16;
+
         fwrite(out_buf, 1, out_nbytes, out_file);
         usleep(SLEEP_INTERVAL);
     }

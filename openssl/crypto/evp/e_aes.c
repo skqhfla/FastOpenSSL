@@ -1831,9 +1831,10 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         } else if (EVP_CIPHER_CTX_encrypting(ctx)) {
             // fprintf(stdout, "[borim] gctx->ctr: %d\n", gctx->ctr);
             if (gctx->ctr) {
-                size_t bulk = 0;
+                size_t bulk = 0, mv_key = 0;
 #if defined(AES_GCM_ASM)
                 if (len >= 32 && AES_GCM_ASM(gctx)) {
+                    mv_key = gctx->gcm.mres;
                     size_t res = (16 - gctx->gcm.mres) % 16;
 
 
@@ -1847,15 +1848,15 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                            gctx->gcm.key, gctx->gcm.Yi.c,
                                            gctx->gcm.Xi.u);
                     gctx->gcm.len.u[1] += bulk;
-                    bulk += res;
                     */
+                    bulk += res;
                 }
 #endif
                 if (borim_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
                                                 len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
-                                                ks, block_cnt))
+                                                ks + bulk + mv_key))
                     return -1;
             } else {
                 size_t bulk = 0;
@@ -1880,10 +1881,12 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
             }
         } else {
             if (gctx->ctr) {
-                size_t bulk = 0;
+                size_t bulk = 0, mv_key = 0;
 #if defined(AES_GCM_ASM)
                 if (len >= 16 && AES_GCM_ASM(gctx)) {
+                    mv_key = gctx->gcm.mres;
                     size_t res = (16 - gctx->gcm.mres) % 16;
+
 
                     if (borim_CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res, ks, block_cnt))
                         return -1;
@@ -1893,15 +1896,15 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                            gctx->gcm.key,
                                            gctx->gcm.Yi.c, gctx->gcm.Xi.u);
                     gctx->gcm.len.u[1] += bulk;
-                    bulk += res;
                     */
+                    bulk += res;
                 }
 #endif
               if (borim_CRYPTO_gcm128_decrypt_ctr32(&gctx->gcm,
                                               in + bulk,
                                               out + bulk,
                                               len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
-                                              ks, block_cnt))
+                                              ks + bulk + mv_key))
                     return -1;
             } else {
                 size_t bulk = 0;
