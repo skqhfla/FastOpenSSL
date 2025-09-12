@@ -551,11 +551,11 @@ __owur int EVP_EncryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                                   const unsigned char *key,
                                   const unsigned char *iv);
 /*__owur*/ int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx,
-                                  EVP_CIPHER *cipher, ENGINE *impl,
+                                  const EVP_CIPHER *cipher, ENGINE *impl,
                                   const unsigned char *key,
                                   const unsigned char *iv);
 /*__owur*/ int jinho_EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx,
-                                  EVP_CIPHER *cipher, ENGINE *impl,
+                                  const EVP_CIPHER *cipher, ENGINE *impl,
                                   const unsigned char *key,
                                   const unsigned char *iv);
 /*__owur*/ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out,

@@ -243,7 +243,7 @@ int EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
     return EVP_CipherInit_ex(ctx, cipher, impl, key, iv, 1);
 }
 
-int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, EVP_CIPHER *cipher,
+int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                        ENGINE *impl, const unsigned char *key,
                        const unsigned char *iv)
 {
@@ -256,7 +256,7 @@ int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, EVP_CIPHER *cipher,
     return EVP_CipherInit_ex(ctx, tmp_cipher, impl, key, iv, 1);
 }
 
-int jinho_EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx, EVP_CIPHER *cipher,
+int jinho_EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                        ENGINE *impl, const unsigned char *key,
                        const unsigned char *iv)
 {
