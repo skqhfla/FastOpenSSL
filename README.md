@@ -28,6 +28,6 @@ cd example
 ```
 
 ## To Do
-- [ ] Issue #1: Auth Tag Validation   
+- [x] Issue #1: Auth Tag Validation   
+- [x] Code Refactoring  
 - [ ] Remove comments in code  
-- [ ] Code Refactoring  
