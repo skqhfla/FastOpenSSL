@@ -27,7 +27,7 @@ def calc_improvement(fast, normal):
 
     if fast is None or normal is None:
         return None
-    return ((normal - fast) / fast) * 100
+    return normal - fast , ((normal - fast) / fast) * 100
 
 
 def check_contents(cmp1, cmp2):
@@ -83,34 +83,33 @@ def compare_main():
         check_contents(fast_enc_result, norm_enc_result)
         check_contents(fast_dec_result, norm_dec_result)
         print()
-        imp_1_3 = calc_improvement(execution_times[0], execution_times[2])
+        imp_sec_1_3, imp_1_3 = calc_improvement(execution_times[0], execution_times[2])
 
         if imp_1_3 is not None:
             print(f"  - Encryption performance improvement: {imp_1_3:.2f}%")
         else:
             print("  - Can not compare execution time")
 
-        imp_2_4 = calc_improvement(execution_times[1], execution_times[3])
+        imp_sec_2_4, imp_2_4 = calc_improvement(execution_times[1], execution_times[3])
         if imp_2_4 is not None:
             print(f"  - Decnryption performance improvement: {imp_2_4:.2f}%")
         else:
             print("  - Can not compare execution time")
 
 
-    return imp_1_3, imp_2_4
+    return imp_1_3, imp_sec_1_3, imp_2_4, imp_sec_2_4
         
         
 if __name__=="__main__":
-
-    enc_res_min, enc_res_max, enc_res_avg, enc_bad_perf_cnt = 100, 0, 0, 0
-    dec_res_min, dec_res_max, dec_res_avg, dec_bad_perf_cnt = 100, 0, 0, 0
+    enc_res_min, enc_res_max, enc_res_avg, enc_sec_avg, enc_bad_perf_cnt = 100, 0, 0, 0, 0
+    dec_res_min, dec_res_max, dec_res_avg, dec_sec_avg, dec_bad_perf_cnt = 100, 0, 0, 0, 0
     perf_enc_res = []
     perf_dec_res = []
     print("Performance Compare Loop: ", loop_count)
 
     for idx in range(1, loop_count + 1):
         print(f"###### Loop Count: [{idx}]")
-        enc_res, dec_res = compare_main()
+        enc_res, enc_sec, dec_res, dec_sec = compare_main()
         if enc_res is None or dec_res is None:
             print("Result is None Skip this loop...")
             continue
@@ -119,6 +118,7 @@ if __name__=="__main__":
         enc_res_min = enc_res if enc_res < enc_res_min else enc_res_min
         enc_res_max = enc_res if enc_res > enc_res_max else enc_res_max
         enc_res_avg += enc_res
+        enc_sec_avg += enc_sec
         perf_enc_res.append(enc_res)
 
         if dec_res < 0:
@@ -126,6 +126,7 @@ if __name__=="__main__":
         dec_res_min = dec_res if dec_res < dec_res_min else dec_res_min
         dec_res_max = dec_res if dec_res > dec_res_max else dec_res_max
         dec_res_avg += dec_res
+        dec_sec_avg += dec_sec
         perf_dec_res.append(dec_res)
 
         print()
@@ -133,15 +134,20 @@ if __name__=="__main__":
     
     enc_res_avg /= loop_count
     dec_res_avg /= loop_count
+    enc_sec_avg /= loop_count
+    dec_sec_avg /= loop_count
+
     print("------- Summary ------")
     print("Loop Count: ", loop_count)
     print("[ENCRYPT SUMMARY]")
+    print(f"Avg improvement sec: {enc_sec_avg:.4f}s")
     print(f"Avg improvement rate: {enc_res_avg:.2f}%")
     print(f"Max improvement rate: {enc_res_max:.2f}%")
     print(f"Min improvement rate: {enc_res_min:.2f}%")
     print(f"Bad performance rate: {enc_bad_perf_cnt/loop_count*100:.2f}% [{enc_bad_perf_cnt} / {loop_count}]")
 
     print("[DECRYPT SUMMARY]")
+    print(f"Avg improvement sec: {dec_sec_avg:.4f}s")
     print(f"Avg improvement rate: {dec_res_avg:.2f}%")
     print(f"Max improvement rate: {dec_res_max:.2f}%")
     print(f"Min improvement rate: {dec_res_min:.2f}%")
