@@ -1845,6 +1845,10 @@ void set_gctx_ctr(EVP_CIPHER_CTX *ctx, int ctr) {
         gctx->gcm.Yi.d[3] = ctr;
 }
 
+void add_gctx_ctr(EVP_CIPHER_CTX *ctx, int ctr) {
+    int cur_ctr = get_gctx_ctr(ctx);
+    set_gctx_ctr(ctx, cur_ctr + ctr);
+}
 
 // JINHO: Encrypt #2
 int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
