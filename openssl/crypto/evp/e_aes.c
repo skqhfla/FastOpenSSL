@@ -1808,6 +1808,44 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 */
 }
 
+// JINHO ADD TMP
+int get_gctx_ctr(EVP_CIPHER_CTX *ctx) {
+    EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX, ctx);
+
+    const union {
+        long one;
+        char little;
+    } is_endian = { 1 };
+
+    if (is_endian.little)
+#ifdef BSWAP4
+        return BSWAP4(gctx->gcm.Yi.d[3]);
+#else
+        return GETU32(gctx->gcm.Yi.c + 12);
+#endif
+    else
+        return gctx->gcm.Yi.d[3];
+}
+
+void set_gctx_ctr(EVP_CIPHER_CTX *ctx, int ctr) {
+    EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX, ctx);
+
+    const union {
+        long one;
+        char little;
+    } is_endian = { 1 };
+
+    if (is_endian.little)
+#   ifdef BSWAP4
+        gctx->gcm.Yi.d[3] = BSWAP4(ctr);
+#   else
+        PUTU32(gctx->gcm.Yi.c + 12, ctr);
+#   endif
+    else
+        gctx->gcm.Yi.d[3] = ctr;
+}
+
+
 // JINHO: Encrypt #2
 int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                           const unsigned char *in, size_t len, unsigned char *ks, int block_cnt)
