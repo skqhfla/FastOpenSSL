@@ -19,15 +19,13 @@ typedef struct
     atomic_int tail;
 } CircularBuffer;
 
-
-
 CircularBuffer ks_buffer;
 unsigned char aes_key[KEY_LENGTH]; 
 unsigned char iv[IV_LENGTH];      
 EVP_CIPHER_CTX *ctx;             
 atomic_bool stop_flag = false;
 
-int borim_processKeystream(unsigned char *buf, int len, int is_mres) {
+int get_keystream(unsigned char *buf, int len, int is_mres) {
     int head_index, item_len;
     if (buf == NULL) 
         return -1;
@@ -38,9 +36,6 @@ int borim_processKeystream(unsigned char *buf, int len, int is_mres) {
             // usleep(10)
         } else {
             head_index = atomic_load(&ks_buffer.head);
-            /*
-            head_index = ks_buffer.head;
-            */
             break;
         }
     }
@@ -57,9 +52,6 @@ int borim_processKeystream(unsigned char *buf, int len, int is_mres) {
         memcpy(buf + (AES_GCM_BLOCK_SIZE * end), ks_buffer.keystreams[0], AES_GCM_BLOCK_SIZE * rest);
     }
     atomic_store(&ks_buffer.head, (head_index + len - is_mres) % BUFFER_SIZE);
-    /*
-    ks_buffer.head = (head_index + res) % BUFFER_SIZE;
-    */
 
     return len - is_mres;
 }
@@ -67,7 +59,7 @@ int borim_processKeystream(unsigned char *buf, int len, int is_mres) {
 
 void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int buf_len)
 {
-    jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
+    EVP_KeyGeneration(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
 }
 
 
@@ -167,8 +159,8 @@ void *xor_encryption_thread(void *arg)
         current_pos += in_nbytes;
 
         int out_nbytes = 0;
-        borim_processKeystream(ks, block_cnt, (decrypted_len % 16) != 0);
-        borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, ks, block_cnt);
+        get_keystream(ks, block_cnt, (decrypted_len % 16) != 0);
+        EVP_XOR(ctx, out_buf, &out_nbytes, in_buf, in_nbytes, ks, block_cnt);
         mres = (out_nbytes + mres) % 16;
 
         fwrite(out_buf, 1, out_nbytes, out_file);
@@ -263,7 +255,7 @@ int main(int argc, char *argv[])
     fclose(in_file);
 
     // AES-GCM 모드 설정
-    if (!jinho_EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
+    if (!EVP_DecryptInit_fast(ctx, EVP_aes_256_gcm(), NULL, aes_key, iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

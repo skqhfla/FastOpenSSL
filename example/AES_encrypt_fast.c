@@ -28,10 +28,10 @@ atomic_bool stop_flag = false;
 
 void aes_gcm_generate_keystream(unsigned char *keystream, int *block_cnt, int buf_len)
 {
-    jinho_EVP_EncryptUpdate(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
+    EVP_KeyGeneration(ctx, keystream, block_cnt, (const unsigned char *)"A", buf_len);
 }
 
-int borim_processKeystream(unsigned char *buf, int len, int is_mres) {
+int get_keystream(unsigned char *buf, int len, int is_mres) {
     int head_index, item_len;
     if (buf == NULL) 
         return -1;
@@ -137,8 +137,8 @@ void *xor_encryption_thread(void *arg)
         encrypted_len = mres + plaintext_len;
         block_cnt = (encrypted_len % 16 == 0) ? encrypted_len / 16 : encrypted_len / 16 + 1;
 
-        borim_processKeystream(ks, block_cnt, (encrypted_len % 16) != 0);
-	    borim_EVP_EncryptUpdate(ctx, out_buf, &out_nbytes, plaintext, plaintext_len, ks, block_cnt);
+        get_keystream(ks, block_cnt, (encrypted_len % 16) != 0);
+	    EVP_XOR(ctx, out_buf, &out_nbytes, plaintext, plaintext_len, ks, block_cnt);
         mres = (out_nbytes + mres) % 16;
 
 	    fwrite(out_buf, 1, out_nbytes, out_file);
@@ -146,7 +146,6 @@ void *xor_encryption_thread(void *arg)
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
-
     elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1.0e9;
 
     printf("Execution time: %.6f seconds\n", elapsed_time);
@@ -201,7 +200,7 @@ int main(int argc, char *argv[])
     OPENSSL_free(iv);
 
     // AES-GCM 모드 설정
-    if (!jinho_EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
+    if (!EVP_EncryptInit_fast(ctx, EVP_aes_256_gcm(), NULL, aes_key, aes_iv))
     {
         fprintf(stderr, "Failed to initialize AES-GCM encryption\n");
         EVP_CIPHER_CTX_free(ctx);

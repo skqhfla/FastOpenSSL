@@ -202,12 +202,12 @@ void aesni_ctr32_encrypt_blocks(const unsigned char *in,
                                 size_t blocks,
                                 const void *key, const unsigned char *ivec);
 
-void jinho_aesni_ctr32_encrypt_blocks(const unsigned char *in,
+void aesni_ctr32_encrypt_blocks_keygen(const unsigned char *in,
                                 unsigned char *out,
                                 size_t blocks,
                                 const void *key, const unsigned char *ivec);
 
-void borim_aesni_ctr32_encrypt_blocks(const unsigned char *in,
+void aesni_ctr32_encrypt_blocks_xor(const unsigned char *in,
                                 unsigned char *out,
                                 size_t blocks,
                                 const unsigned char *keystream);
@@ -1669,11 +1669,10 @@ static int aes_gcm_tls_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 }
 
 // JINHO: Encrypt #2
-int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+int aes_gcm_cipher_keygen(EVP_CIPHER_CTX *ctx, unsigned char *out,
                           const unsigned char *in, size_t len)
 {
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
-    // gctx->ctr = (ctr128_f) jinho_aesni_ctr32_encrypt_blocks;
 
     /* If not set up, return error */
     if (!gctx->key_set)
@@ -1687,7 +1686,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
         return -1;
     */
 
-    return jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm, in, out, len, (ctr128_f) jinho_aesni_ctr32_encrypt_blocks);
+    return CRYPTO_gcm128_encrypt_ctr32_keygen(&gctx->gcm, in, out, len, (ctr128_f) aesni_ctr32_encrypt_blocks_keygen);
     
     // return 0;
     /*
@@ -1705,7 +1704,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (jinho_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res))
+                    if (CRYPTO_gcm128_encrypt_keygen(&gctx->gcm, in, out, res))
                         return -1;
 
                     bulk = AES_gcm_encrypt(in + res,
@@ -1716,7 +1715,7 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     bulk += res;
                 }
 #endif
-                if (jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
+                if (CRYPTO_gcm128_encrypt_ctr32_keygen(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
                                                 len - bulk, gctx->ctr))
@@ -1810,7 +1809,6 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 */
 }
 
-// JINHO ADD TMP
 int get_gctx_ctr(EVP_CIPHER_CTX *ctx) {
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX, ctx);
 
@@ -1853,11 +1851,10 @@ void add_gctx_ctr(EVP_CIPHER_CTX *ctx, int ctr) {
 }
 
 // JINHO: Encrypt #2
-int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+int aes_gcm_cipher_xor(EVP_CIPHER_CTX *ctx, unsigned char *out,
                           const unsigned char *in, size_t len, unsigned char *ks, int block_cnt)
 {
     EVP_AES_GCM_CTX *gctx = EVP_C_DATA(EVP_AES_GCM_CTX,ctx);
-    // gctx->ctr = (ctr128_f) borim_aesni_ctr32_encrypt_blocks;
     /* If not set up, return error */
     if (!gctx->key_set)
         return -1;
@@ -1875,7 +1872,6 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
             if (CRYPTO_gcm128_aad(&gctx->gcm, in, len))
                 return -1;
         } else if (EVP_CIPHER_CTX_encrypting(ctx)) {
-            // fprintf(stdout, "[borim] gctx->ctr: %d\n", gctx->ctr);
             if (gctx->ctr) {
                 size_t bulk = 0, mv_key = 0;
 #if defined(AES_GCM_ASM)
@@ -1885,7 +1881,7 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
 
 
 		    // JINHO: Encrypt #3
-                    if (borim_CRYPTO_gcm128_encrypt(&gctx->gcm, in, out, res, ks, block_cnt))
+                    if (CRYPTO_gcm128_encrypt_xor(&gctx->gcm, in, out, res, ks, block_cnt))
                         return -1;
 
                     /*
@@ -1898,10 +1894,10 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     bulk += res;
                 }
 #endif
-                if (borim_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm,
+                if (CRYPTO_gcm128_encrypt_ctr32_xor(&gctx->gcm,
                                                 in + bulk,
                                                 out + bulk,
-                                                len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
+                                                len - bulk, (ctr128_f) aesni_ctr32_encrypt_blocks_xor, 
                                                 ks + bulk + mv_key))
                     return -1;
             } else {
@@ -1934,22 +1930,15 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                     size_t res = (16 - gctx->gcm.mres) % 16;
 
 
-                    if (borim_CRYPTO_gcm128_decrypt(&gctx->gcm, in, out, res, ks, block_cnt))
+                    if (CRYPTO_gcm128_decrypt_xor(&gctx->gcm, in, out, res, ks, block_cnt))
                         return -1;
-                    /*
-                    bulk = AES_gcm_decrypt(in + res,
-                                           out + res, len - res,
-                                           gctx->gcm.key,
-                                           gctx->gcm.Yi.c, gctx->gcm.Xi.u);
-                    gctx->gcm.len.u[1] += bulk;
-                    */
                     bulk += res;
                 }
 #endif
-              if (borim_CRYPTO_gcm128_decrypt_ctr32(&gctx->gcm,
+              if (CRYPTO_gcm128_decrypt_ctr32_xor(&gctx->gcm,
                                               in + bulk,
                                               out + bulk,
-                                              len - bulk, (ctr128_f) borim_aesni_ctr32_encrypt_blocks, 
+                                              len - bulk, (ctr128_f) aesni_ctr32_encrypt_blocks_xor, 
                                               ks + bulk + mv_key))
                     return -1;
             } else {

@@ -63,9 +63,9 @@ extern "C" {
 # define EVP_PKEY_MO_DECRYPT     0x0008
 
 // JINHO
-int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+int aes_gcm_cipher_keygen(EVP_CIPHER_CTX *ctx, unsigned char *out,
                           const unsigned char *in, size_t len);
-int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
+int aes_gcm_cipher_xor(EVP_CIPHER_CTX *ctx, unsigned char *out,
                           const unsigned char *in, size_t len, 
                          unsigned char *ks, int block_cnt);
 
@@ -554,19 +554,19 @@ __owur int EVP_EncryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                                   const EVP_CIPHER *cipher, ENGINE *impl,
                                   const unsigned char *key,
                                   const unsigned char *iv);
-/*__owur*/ int jinho_EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx,
+/*__owur*/ int EVP_EncryptInit_fast(EVP_CIPHER_CTX *ctx,
                                   const EVP_CIPHER *cipher, ENGINE *impl,
                                   const unsigned char *key,
                                   const unsigned char *iv);
-/*__owur*/ int jinho_EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx,
+/*__owur*/ int EVP_DecryptInit_fast(EVP_CIPHER_CTX *ctx,
                                   const EVP_CIPHER *cipher, ENGINE *impl,
                                   const unsigned char *key,
                                   const unsigned char *iv);
 /*__owur*/ int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                  int *outl, const unsigned char *in, int inl);
-/*__owur*/ int jinho_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out,
+/*__owur*/ int EVP_KeyGeneration(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                  int *outl, const unsigned char *in, int inl);
-/*__owur*/ int borim_EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out,
+/*__owur*/ int EVP_XOR(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                  int *outl, const unsigned char *in, int inl,
                                       unsigned char *ks, int block_cnt);
 /*__owur*/ int EVP_EncryptFinal_ex(EVP_CIPHER_CTX *ctx, unsigned char *out,
