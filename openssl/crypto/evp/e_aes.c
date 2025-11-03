@@ -1682,8 +1682,10 @@ int jinho_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (gctx->tls_aad_len >= 0)
         return aes_gcm_tls_cipher(ctx, out, in, len);
 
+    /*
     if (!gctx->iv_set)
         return -1;
+    */
 
     return jinho_CRYPTO_gcm128_encrypt_ctr32(&gctx->gcm, in, out, len, (ctr128_f) jinho_aesni_ctr32_encrypt_blocks);
     
@@ -1863,8 +1865,10 @@ int borim_aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (gctx->tls_aad_len >= 0)
         return aes_gcm_tls_cipher(ctx, out, in, len);
 
+    /*
     if (!gctx->iv_set)
         return -1;
+    */
     if (in) {
         if (out == NULL) {
 	    // JINHO: Encrypt #2
@@ -2002,8 +2006,10 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     if (gctx->tls_aad_len >= 0)
         return aes_gcm_tls_cipher(ctx, out, in, len);
 
+    /*
     if (!gctx->iv_set)
         return -1;
+    */
     if (in) {
         if (out == NULL) {
 	    // JINHO: Encrypt #2
@@ -2107,13 +2113,13 @@ static int aes_gcm_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                                      EVP_CIPHER_CTX_buf_noconst(ctx),
                                      gctx->taglen) != 0)
                 return -1;
-            gctx->iv_set = 0;
+            // gctx->iv_set = 0;
             return 0;
         }
         CRYPTO_gcm128_tag(&gctx->gcm, EVP_CIPHER_CTX_buf_noconst(ctx), 16);
         gctx->taglen = 16;
         /* Don't reuse the IV */
-        gctx->iv_set = 0;
+        // gctx->iv_set = 0;
         return 0;
     }
 
