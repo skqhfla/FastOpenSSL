@@ -27,7 +27,7 @@ def calc_improvement(fast, normal):
 
     if fast is None or normal is None:
         return None
-    return ((normal - fast) / fast) * 100
+    return ((normal - fast) / normal) * 100
 
 
 def check_contents(cmp1, cmp2):
