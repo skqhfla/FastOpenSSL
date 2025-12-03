@@ -1873,32 +1873,15 @@ int aes_gcm_cipher_xor(EVP_CIPHER_CTX *ctx, unsigned char *out,
                 return -1;
         } else if (EVP_CIPHER_CTX_encrypting(ctx)) {
             if (gctx->ctr) {
-                size_t bulk = 0, mv_key = 0;
 #if defined(AES_GCM_ASM)
-                if (len >= 32 && AES_GCM_ASM(gctx)) {
-                    mv_key = gctx->gcm.mres;
-                    size_t res = (16 - gctx->gcm.mres) % 16;
-
-
-		    // JINHO: Encrypt #3
-                    if (CRYPTO_gcm128_encrypt_xor(&gctx->gcm, in, out, res, ks, block_cnt))
-                        return -1;
-
-                    /*
-                    bulk = AES_gcm_encrypt(in + res,
-                                           out + res, len - res,
-                                           gctx->gcm.key, gctx->gcm.Yi.c,
-                                           gctx->gcm.Xi.u);
-                    gctx->gcm.len.u[1] += bulk;
-                    */
-                    bulk += res;
-                }
 #endif
+				gctx->gcm.mres = 0;
+				
                 if (CRYPTO_gcm128_encrypt_ctr32_xor(&gctx->gcm,
-                                                in + bulk,
-                                                out + bulk,
-                                                len - bulk, (ctr128_f) aesni_ctr32_encrypt_blocks_xor, 
-                                                ks + bulk + mv_key))
+                                                in,
+                                                out,
+                                                len, (ctr128_f) aesni_ctr32_encrypt_blocks_xor, 
+                                                ks))
                     return -1;
             } else {
                 size_t bulk = 0;
@@ -1923,23 +1906,14 @@ int aes_gcm_cipher_xor(EVP_CIPHER_CTX *ctx, unsigned char *out,
             }
         } else {
             if (gctx->ctr) {
-                size_t bulk = 0, mv_key = 0;
 #if defined(AES_GCM_ASM)
-                if (len >= 16 && AES_GCM_ASM(gctx)) {
-                    mv_key = gctx->gcm.mres;
-                    size_t res = (16 - gctx->gcm.mres) % 16;
-
-
-                    if (CRYPTO_gcm128_decrypt_xor(&gctx->gcm, in, out, res, ks, block_cnt))
-                        return -1;
-                    bulk += res;
-                }
 #endif
+				gctx->gcm.mres = 0;
               if (CRYPTO_gcm128_decrypt_ctr32_xor(&gctx->gcm,
-                                              in + bulk,
-                                              out + bulk,
-                                              len - bulk, (ctr128_f) aesni_ctr32_encrypt_blocks_xor, 
-                                              ks + bulk + mv_key))
+                                              in,
+                                              out,
+                                              len, (ctr128_f) aesni_ctr32_encrypt_blocks_xor, 
+                                              ks))
                     return -1;
             } else {
                 size_t bulk = 0;
